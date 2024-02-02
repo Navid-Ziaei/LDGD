@@ -1,0 +1,8 @@
+res =
+
+         0   29.0000   96.6667
+    1.0000    1.0000    3.3333
+
+Macro-average Precision: 97.22%
+Macro-average Recall: 96.30%
+Macro-average F1 Score: 96.59%

@@ -1,0 +1,10 @@
+{
+    "dataset": "synthetic",
+    "model": "jbgplvm",
+    "debug_mode": true,
+    "load_feature": true,
+    "save_features": false,
+    "load_pretrained_model": true,
+    "num_fold": 1,
+    "test_size": 0.8
+}

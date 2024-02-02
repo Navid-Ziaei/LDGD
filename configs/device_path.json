@@ -1,0 +1,7 @@
+{
+    "raw_dataset_path": "D:\\Navid\\Dataset\\CLEAR\\",
+    "prepared_dataset_path": "D:\\Navid\\Dataset\\CLEAR\\interim\\",
+    "preprocessed_dataset_path": "D:\\Navid\\Dataset\\CLEAR\\preprocessed\\",
+    "feature_path": "D:\\Navid\\Dataset\\CLEAR\\features\\",
+    "model": "D:\\Navid\\Projects\\gp_project_pytorch\\results\\synthetic\\Best result\\model\\"
+}

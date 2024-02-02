@@ -1,0 +1,6 @@
+{
+    "prepared_dataset_path": "D:\\BTsC\\Dataset\\prepared\\",
+    "preprocessed_dataset_path": "D:\\BTsC\\Dataset\\preprocessed\\",
+    "feature_path": "D:\\BTsC\\Dataset\\features\\",
+    "model": "D:\\BTsC\\Model\\"
+}
