@@ -28,18 +28,19 @@ from sklearn.model_selection import train_test_split
 from sklearn.datasets import make_moons, make_circles, make_classification
 
 
-def generate_data(pattern, n_samples=100, noise=0.1, n_features=50, increase_method='add_noise'):
+def generate_data(pattern, n_samples=100, noise=0.1, n_features=50, increase_method='add_noise', random_state=None):
     if pattern == 'moon':
-        X, y = make_moons(n_samples=n_samples, noise=noise)
+        X, y = make_moons(n_samples=n_samples, noise=noise, random_state=random_state)
     elif pattern == 'ring':
-        X, y = make_circles(n_samples=n_samples, noise=noise)
+        X, y = make_circles(n_samples=n_samples, noise=noise, random_state=random_state)
     elif pattern == 'cross':
         X, y = make_classification(n_samples=n_samples, n_features=2, n_informative=2, n_redundant=0,
-                                   n_clusters_per_class=1)
+                                   n_clusters_per_class=1, random_state=random_state)
     else:
         raise ValueError("Invalid pattern")
 
     increase_method = 'linear'
+    np.random.seed(random_state)
     # add noise dimensions
     if increase_method == 'add_noise':
         noise_dims = np.random.rand(n_samples, n_features - 2)  # adjust to match desired total dimensionality
