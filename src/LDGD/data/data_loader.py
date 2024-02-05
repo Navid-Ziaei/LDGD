@@ -1,4 +1,3 @@
-
 from ..utils import resample, smooth_signal, zscore, non_overlapping_moving_average_repeated
 
 import warnings
@@ -14,7 +13,6 @@ import pandas as pd
 import seaborn as sns
 from matplotlib import pyplot as plt
 
-
 from collections import OrderedDict
 from abc import ABC, abstractmethod
 from scipy import io
@@ -28,7 +26,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.datasets import make_moons, make_circles, make_classification
 
 
-def generate_data(pattern, n_samples=100, noise=0.1, n_features=50, increase_method='add_noise', random_state=None):
+def generate_data(pattern, n_samples=100, noise=0.1, n_features=50, increase_method='add_noise', random_state=None,
+                  plot_data=False):
     if pattern == 'moon':
         X, y = make_moons(n_samples=n_samples, noise=noise, random_state=random_state)
     elif pattern == 'ring':
@@ -48,45 +47,44 @@ def generate_data(pattern, n_samples=100, noise=0.1, n_features=50, increase_met
     elif increase_method == 'linear':
         transform_matrix = np.random.rand(X.shape[-1], n_features)  # adjust to match desired total dimensionality
 
-        color_list = ['r', 'b', 'g']
-        label_list = ['clasa 1', 'class 2']
-        fig, ax = plt.subplots(1, figsize=(12, 8))
-        ax.scatter(X[y == 0, 0], X[y == 0, 1],
-                   c='r', s=40, alpha=1,
-                   edgecolor='r')  # edgecolor adds a border to the markers
-        ax.scatter(X[y == 1, 0], X[y == 1, 1],
-                   c='b', s=40, alpha=1,
-                   edgecolor='b')
-        # Adding labels with larger font size
-        ax.set_xlabel('$X_1$', fontsize=32)
-        ax.set_ylabel('$X_2$', fontsize=32)
+        if plot_data is True:
+            fig, ax = plt.subplots(1, figsize=(12, 8))
+            ax.scatter(X[y == 0, 0], X[y == 0, 1],
+                       c='r', s=40, alpha=1,
+                       edgecolor='r')  # edgecolor adds a border to the markers
+            ax.scatter(X[y == 1, 0], X[y == 1, 1],
+                       c='b', s=40, alpha=1,
+                       edgecolor='b')
+            # Adding labels with larger font size
+            ax.set_xlabel('$X_1$', fontsize=32)
+            ax.set_ylabel('$X_2$', fontsize=32)
 
-        # Setting tick label sizes
-        plt.xticks(fontsize=28)
-        plt.yticks(fontsize=28)
+            # Setting tick label sizes
+            plt.xticks(fontsize=28)
+            plt.yticks(fontsize=28)
 
-        # Adjusting spines
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        ax.spines['left'].set_linewidth(1)
-        ax.spines['bottom'].set_linewidth(1)
+            # Adjusting spines
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.spines['left'].set_linewidth(1)
+            ax.spines['bottom'].set_linewidth(1)
 
-        # Optional: Add grid
-        ax.grid(True, linestyle='--', alpha=0.5)
+            # Optional: Add grid
+            ax.grid(True, linestyle='--', alpha=0.5)
 
-        # Optional: Set aspect ratio
-        ax.set_aspect('equal', adjustable='box')
+            # Optional: Set aspect ratio
+            ax.set_aspect('equal', adjustable='box')
 
-        # Optional: Add legend
-        # If you have a legend to add, uncomment and modify the following line
-        plt.legend(['Class 1', 'Class 2'], fontsize=24)  # Replace labels with appropriate ones
-        # Improve layout
-        plt.tight_layout()
-        fig.savefig("dataset.png")
-        fig.savefig("dataset.svg")
+            # Optional: Add legend
+            # If you have a legend to add, uncomment and modify the following line
+            plt.legend(['Class 1', 'Class 2'], fontsize=24)  # Replace labels with appropriate ones
+            # Improve layout
+            plt.tight_layout()
+            fig.savefig("dataset.png")
+            fig.savefig("dataset.svg")
 
-        # Show the plot
-        plt.show()
+            # Show the plot
+            plt.show()
         X = np.matmul(X, transform_matrix)
         noise_dims = np.random.rand(n_samples, X.shape[-1])  # adjust to match desired total dimensionality
         X = np.concatenate((X, noise_dims), axis=1)
@@ -97,6 +95,7 @@ def generate_data(pattern, n_samples=100, noise=0.1, n_features=50, increase_met
 
 
 def load_dataset(dataset_name, test_size=0.1, **kwargs):
+    random_state = kwargs.get('random_state', 42)
     supported_datasets = ['oil', 'wine', 'iris', 'usps', 'synthetic']
     if dataset_name.lower() == 'oil':
         wdir = Path(os.path.abspath('')).parent.parent
@@ -135,7 +134,7 @@ def load_dataset(dataset_name, test_size=0.1, **kwargs):
         increase_method = kwargs.get('increase_method', 'linear')
 
         # Generate synthetic data
-        X, y = generate_data(pattern, n_samples, noise, n_features, increase_method)
+        X, y = generate_data(pattern, n_samples, noise, n_features, increase_method, random_state=random_state)
     else:
         raise ValueError(f"Dataset should be from {supported_datasets}")
 
@@ -146,7 +145,7 @@ def load_dataset(dataset_name, test_size=0.1, **kwargs):
     # Split the dataset into training and test sets
     X_train, X_test, y_train, y_test, y_train_labels, y_test_labels = train_test_split(X, y_one_hot, y,
                                                                                        test_size=test_size,
-                                                                                       random_state=42)
+                                                                                       random_state=random_state)
     # Convert to PyTorch tensors
     X_train_tensor = torch.tensor(X_train, dtype=torch.float32)
     X_test_tensor = torch.tensor(X_test, dtype=torch.float32)

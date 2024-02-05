@@ -15,8 +15,9 @@ from LDGD.data.data_loader import load_dataset
 from gpytorch.likelihoods import GaussianLikelihood, BernoulliLikelihood
 
 # Set the seed for reproducibility
-np.random.seed(42)
-torch.manual_seed(42)
+random_tate=42
+np.random.seed(random_tate)
+torch.manual_seed(random_tate)
 
 # load settings from settings.json
 settings = Settings()
@@ -46,7 +47,8 @@ model_settings = {
 # load raw data
 yn_train, yn_test, ys_train, ys_test, labels_train, labels_test = load_dataset(dataset_name=settings.dataset,
                                                                                test_size=0.8,
-                                                                               n_features=model_settings['n_features'])
+                                                                               n_features=model_settings['n_features'],
+                                                                               random_tate=random_tate)
 model_settings['data_dim'] = yn_train.shape[-1]
 batch_shape = torch.Size([model_settings['data_dim']])
 
