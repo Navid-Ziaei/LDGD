@@ -23,8 +23,11 @@ class JointGPLVM_Bayesian(nn.Module):
                  shared_inducing_points=False,
                  use_shared_kernel=False,
                  cls_weight=1.0,
-                 reg_weight=1.0):
+                 reg_weight=1.0,
+                 random_state=None):
         super(JointGPLVM_Bayesian, self).__init__()
+
+        torch.manual_seed(random_state)
 
         self.x_test = None
         self.n_test = None
@@ -73,6 +76,7 @@ class JointGPLVM_Bayesian(nn.Module):
                 # Concatenate along the first dimension to form the final inducing_inputs
                 self.inducing_inputs = torch.cat((self.inducing_inputs_reg, self.inducing_inputs_cls), dim=0)
             else:
+
                 self.inducing_inputs_cls = nn.Parameter(torch.randn(self.k, num_inducing_points, self.q))
                 self.inducing_inputs_reg = nn.Parameter(torch.randn(self.d, num_inducing_points, self.q))
 
