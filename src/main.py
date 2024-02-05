@@ -76,7 +76,8 @@ model = JointGPLVM_Bayesian(yn_train,
                             shared_inducing_points=model_settings['shared_inducing_points'],
                             use_shared_kernel=model_settings['use_shared_kernel'],
                             cls_weight=model_settings['cls_weight'],
-                            reg_weight=model_settings['reg_weight'])
+                            reg_weight=model_settings['reg_weight'],
+                            random_state=random_tate)
 
 if model_settings['load_trained_model'] is False:
     losses, history_train = model.train_model(yn=yn_train, ys=ys_train,
