@@ -1,12 +1,21 @@
+
+from ..utils import resample, smooth_signal, zscore, non_overlapping_moving_average_repeated
+
 import warnings
 import os
+import mne
+import mne_bids
 import tarfile
 import urllib
-# import mne
-# import mne_bids
+import torch
+
+import numpy as np
+import pandas as pd
+import seaborn as sns
+from matplotlib import pyplot as plt
+
 
 from collections import OrderedDict
-from src.gp_project_pytorch.utils import resample, smooth_signal, zscore
 from abc import ABC, abstractmethod
 from scipy import io
 from tqdm import tqdm
@@ -15,12 +24,8 @@ from pathlib import Path
 from scipy.signal import butter, filtfilt, hilbert, decimate, firwin, freqz
 from sklearn.datasets import load_iris, load_wine
 from sklearn.datasets import fetch_openml
-
 from sklearn.model_selection import train_test_split
-
-from src import *
 from sklearn.datasets import make_moons, make_circles, make_classification
-import matplotlib.pyplot as plt
 
 
 def generate_data(pattern, n_samples=100, noise=0.1, n_features=50, increase_method='add_noise'):

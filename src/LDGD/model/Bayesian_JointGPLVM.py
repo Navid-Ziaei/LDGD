@@ -1,3 +1,10 @@
+
+from ..model.utils.variational import VariationalDist, VariationalLatentVariable, \
+    CholeskeyVariationalDist
+from ..visualization import plot_loss
+from ..model.utils.variational_strategy import VariationalStrategy2
+
+
 import json
 import math
 import torch
@@ -6,11 +13,6 @@ import numpy as np
 import torch.nn as nn
 from torch import optim
 from sklearn.metrics import classification_report, accuracy_score, precision_score, recall_score, f1_score
-
-from gp_project_pytorch.model.utils.variational import VariationalDist, VariationalLatentVariable, \
-    CholeskeyVariationalDist
-from gp_project_pytorch.visualization import plot_loss
-from ..model.utils.variational_strategy import VariationalStrategy2
 
 
 class JointGPLVM_Bayesian(nn.Module):

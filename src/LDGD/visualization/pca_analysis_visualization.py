@@ -47,7 +47,6 @@ def plot_multitaper_psd(signal, fs, NW=2):
     plt.show()
 
 
-
 def plot_continuous_heatmap(time, signal, indicator, channel_names, normalize=True, cmap='winter', save_path=None,
                             file_name='continuous_signal_heatmap'):
     # Find start and end indices for -1 regions
@@ -97,16 +96,6 @@ def moving_average(data, M):
     # Convolve your data with this window
     smoothed_data = np.convolve(data, window, mode='valid')  # 'valid' ensures output is of size N-M+1
     return smoothed_data
-
-
-def non_overlapping_moving_average_repeated(data, M):
-    # Reshape data into chunks of size M (the last chunk might be smaller if data size is not divisible by M)
-    chunks = np.array_split(data, len(data) // M)
-
-    # Compute average for each chunk and repeat the average M times (or the length of the chunk for the last segment)
-    avg_values_repeated = np.concatenate([np.full(len(chunk), np.mean(chunk)) for chunk in chunks])
-
-    return avg_values_repeated
 
 
 def plot_continuous_signal(continuous_signal, continuous_indicator, channel_names, channel_number, settings,

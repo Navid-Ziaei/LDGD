@@ -94,17 +94,6 @@ def plot_with_confidence(x_train, y_train, x_test, mu_star, std_test, inducing_p
     plt.show()
 
 
-def plot_loss(losses):
-    # Plot the optimization process
-    plt.figure(figsize=(10, 6))
-    plt.plot(losses)
-    plt.xlabel('Iteration')
-    plt.ylabel('Negative Log-Marginal Likelihood')
-    plt.title('Optimization of Negative Log-Marginal Likelihood')
-    plt.grid(True)
-    plt.show()
-
-
 def create_animation(x_train, y_train, inducing_points_history):
     # Setup the figure for animation
     fig, ax = plt.subplots(figsize=(10, 6))

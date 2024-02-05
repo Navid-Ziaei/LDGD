@@ -1,5 +1,10 @@
-from src import *
-from gp_project_pytorch.model.utils.variational import VariationalDist, VariationalLatentVariable, CholeskeyVariationalDist
+
+from ..model.utils.variational import VariationalDist, VariationalLatentVariable, CholeskeyVariationalDist
+from ..visualization.vizualize_utils import plot_loss
+
+import numpy as np
+import torch
+
 from torch import optim
 import gpytorch
 import torch.nn as nn

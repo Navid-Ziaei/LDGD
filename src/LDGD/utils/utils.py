@@ -2,6 +2,14 @@ import os
 import pandas as pd
 
 
+def non_overlapping_moving_average_repeated(data, M):
+    # Reshape data into chunks of size M (the last chunk might be smaller if data size is not divisible by M)
+    chunks = np.array_split(data, len(data) // M)
+
+    # Compute average for each chunk and repeat the average M times (or the length of the chunk for the last segment)
+    avg_values_repeated = np.concatenate([np.full(len(chunk), np.mean(chunk)) for chunk in chunks])
+
+    return avg_values_repeated
 def append_dict_to_excel(filename, data_dict):
     """Append a dictionary to an Excel file.
 

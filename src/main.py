@@ -5,14 +5,15 @@ import numpy as np
 import torch
 from matplotlib import pyplot as plt
 
-from src.gp_project_pytorch.visualization import plot_results_gplvm
-from src.gp_project_pytorch.settings import Settings, Paths
-from src.gp_project_pytorch.model.utils import ARDRBFKernel
-from src.gp_project_pytorch.model import JointGPLVM_Bayesian
-from gp_project_pytorch.data.data_loader import load_dataset
+from LDGD.visualization import plot_results_gplvm
+from LDGD.settings import Settings, Paths
+from LDGD.model.utils import ARDRBFKernel
+from LDGD.model import JointGPLVM_Bayesian
+from LDGD.visualization.animated_visualization import animate_train
+from LDGD.visualization.vizualize_utils import plot_heatmap
+from LDGD.data.data_loader import load_dataset
 from gpytorch.likelihoods import GaussianLikelihood, BernoulliLikelihood
-from gp_project_pytorch.visualization.animated_visualization import animate_train
-from gp_project_pytorch.visualization.vizualize_utils import plot_heatmap
+
 # Set the seed for reproducibility
 np.random.seed(42)
 torch.manual_seed(42)
