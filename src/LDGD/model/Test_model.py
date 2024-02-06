@@ -13,11 +13,8 @@ from torch import optim
 from sklearn.metrics import classification_report, accuracy_score, precision_score, recall_score, f1_score
 
 
-class JointGPLVM_Bayesian(nn.Module):
-    def __init__(self, y, kernel_reg, kernel_cls, likelihood_reg, likelihood_cls, latent_dim=2,
-                 num_inducing_points=10,
-                 num_inducing_points_reg=10,
-                 num_inducing_points_cls=10,
+class TestJointGPLVM_Bayesian(nn.Module):
+    def __init__(self, y, kernel_reg, kernel_cls, likelihood_reg, likelihood_cls, latent_dim=2, num_inducing_points=10,
                  num_classes=3,
                  inducing_points=None,
                  use_gpytorch=False,
@@ -26,7 +23,7 @@ class JointGPLVM_Bayesian(nn.Module):
                  cls_weight=1.0,
                  reg_weight=1.0,
                  random_state=None):
-        super(JointGPLVM_Bayesian, self).__init__()
+        super(TestJointGPLVM_Bayesian, self).__init__()
 
         torch.manual_seed(random_state)
         self.whitening_parameters = True
@@ -55,9 +52,8 @@ class JointGPLVM_Bayesian(nn.Module):
         self.jitter = 1e-4
 
         self.n = y.shape[0]
-        self.m = num_inducing_points
-        self.m_reg = num_inducing_points_reg
-        self.m_cls = num_inducing_points_cls
+        self.m_reg = 6
+        self.m_cls = 3
         self.d = y.shape[1]  # Number of featurea
         self.q = latent_dim  # Number of hidden space dimensions
         self.log_noise_sigma = nn.Parameter(torch.ones(1) * -2)
@@ -76,6 +72,7 @@ class JointGPLVM_Bayesian(nn.Module):
                 # Concatenate along the first dimension to form the final inducing_inputs
                 self.inducing_inputs = torch.cat((self.inducing_inputs_reg, self.inducing_inputs_cls), dim=0)
             else:
+
                 self.inducing_inputs_cls = nn.Parameter(torch.randn(self.k, num_inducing_points, self.q))
                 self.inducing_inputs_reg = nn.Parameter(torch.randn(self.d, num_inducing_points, self.q))
 
@@ -93,17 +90,17 @@ class JointGPLVM_Bayesian(nn.Module):
 
             self.q_u_reg = gpytorch.variational.CholeskyVariationalDistribution(self.m_reg,
                                                                                 batch_shape=self.batch_shape_reg)
-            self.q_f_reg = gpytorch.variational.VariationalStrategy(model=self,
-                                                                    inducing_points=self.inducing_inputs_reg,
-                                                                    variational_distribution=self.q_u_reg,
-                                                                    learn_inducing_locations=True)
+            self.q_f_reg = VariationalStrategy2(model=self,
+                                                inducing_points=self.inducing_inputs_reg,
+                                                variational_distribution=self.q_u_reg,
+                                                learn_inducing_locations=True)
 
             self.q_u_cls = gpytorch.variational.CholeskyVariationalDistribution(self.m_cls,
                                                                                 batch_shape=self.batch_shape_cls)
-            self.q_f_cls = gpytorch.variational.VariationalStrategy(model=self,
-                                                                    inducing_points=self.inducing_inputs_cls,
-                                                                    variational_distribution=self.q_u_cls,
-                                                                    learn_inducing_locations=True)
+            self.q_f_cls = VariationalStrategy2(model=self,
+                                                inducing_points=self.inducing_inputs_cls,
+                                                variational_distribution=self.q_u_cls,
+                                                learn_inducing_locations=True)
         else:
             self.prior_x = torch.distributions.Normal(torch.zeros(self.n, self.q), torch.ones(self.n, self.q))
             self.x = VariationalLatentVariable(self.n, self.d, self.q, X_init=x_init, prior_x=self.prior_x)
@@ -180,7 +177,7 @@ class JointGPLVM_Bayesian(nn.Module):
                                        self.inducing_inputs_cls)  # of size [D, M, M]
             k_mn_cls = self.kernel_cls(self.inducing_inputs_cls, x_samples)
         else:
-            k_nn_cls = self.kernel_cls(x_samples, x_samples).add_jitter(self.jitter).evaluate()  # of size [D, N, N]
+            k_nn_cls = self.kernel_cls(x_samples, x_samples).add_jitter(self.jitter).evaluate() # of size [D, N, N]
             k_mm_cls = self.kernel_cls(self.inducing_inputs_cls,
                                        self.inducing_inputs_cls).evaluate()  # of size [D, M, M]
             k_mn_cls = self.kernel_cls(self.inducing_inputs_cls, x_samples).evaluate()
@@ -467,9 +464,9 @@ class JointGPLVM_Bayesian(nn.Module):
                 k_mm_cls += torch.eye(k_mm_cls.shape[-1]) * self.jitter
 
                 predictive_dist_cls = self.q_f_cls.predictive_distribution(k_nn_cls, k_mm_cls,
-                                                                           k_mn_cls,
-                                                                           variational_mean=self.q_u_cls.mu,
-                                                                           variational_cov=self.q_u_cls.sigma)
+                                                                   k_mn_cls,
+                                                                   variational_mean=self.q_u_cls.mu,
+                                                                   variational_cov=self.q_u_cls.sigma)
                 predictions_probs.append(self.likelihood_cls(predictive_dist_cls.mean).mean.detach().numpy())
                 predictions.append(self.likelihood_cls(predictive_dist_cls.mean).mean.argmax(dim=0))
             predictions = np.concatenate(predictions, axis=0)

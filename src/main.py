@@ -8,6 +8,7 @@ from matplotlib import pyplot as plt
 from LDGD.visualization import plot_results_gplvm
 from LDGD.settings import Settings, Paths
 from LDGD.model.utils import ARDRBFKernel
+from LDGD.model.Test_model import TestJointGPLVM_Bayesian
 from LDGD.model import JointGPLVM_Bayesian
 from LDGD.visualization.animated_visualization import animate_train
 from LDGD.visualization.vizualize_utils import plot_heatmap
@@ -15,9 +16,9 @@ from LDGD.data.data_loader import load_dataset
 from gpytorch.likelihoods import GaussianLikelihood, BernoulliLikelihood
 
 # Set the seed for reproducibility
-random_tate=42
-np.random.seed(random_tate)
-torch.manual_seed(random_tate)
+random_state = 42
+np.random.seed(random_state)
+torch.manual_seed(random_state)
 
 # load settings from settings.json
 settings = Settings()
@@ -29,17 +30,19 @@ paths.load_device_paths()
 
 model_settings = {
     'latent_dim': 2,
-    'num_inducing_points': 5,
-    'num_epochs_train': 1000,
-    'num_epochs_test': 1000,
+    'num_inducing_points_reg': 25,
+    'num_inducing_points_cls': 5,
+    'num_inducing_points': 10,
+    'num_epochs_train': 3000,
+    'num_epochs_test': 3000,
     'batch_size': 100,
     'load_trained_model': False,
     'load_tested_model': False,
-    'use_gpytorch': False,
+    'use_gpytorch': True,
     'n_features': 10,
     'dataset': settings.dataset,
     'use_shared_kernel': False,
-    'shared_inducing_points': False,
+    'shared_inducing_points': True,
     'reg_weight': 1.0,
     'cls_weight': 1.0
 }
@@ -48,7 +51,7 @@ model_settings = {
 yn_train, yn_test, ys_train, ys_test, labels_train, labels_test = load_dataset(dataset_name=settings.dataset,
                                                                                test_size=0.8,
                                                                                n_features=model_settings['n_features'],
-                                                                               random_tate=random_tate)
+                                                                               random_tate=random_state)
 model_settings['data_dim'] = yn_train.shape[-1]
 batch_shape = torch.Size([model_settings['data_dim']])
 
@@ -69,6 +72,8 @@ model = JointGPLVM_Bayesian(yn_train,
                             kernel_cls=kernel_cls,
                             num_classes=ys_train.shape[-1],
                             latent_dim=model_settings['latent_dim'],
+                            num_inducing_points_reg=model_settings['num_inducing_points_reg'],
+                            num_inducing_points_cls=model_settings['num_inducing_points_cls'],
                             num_inducing_points=model_settings['num_inducing_points'],
                             likelihood_reg=likelihood_reg,
                             likelihood_cls=likelihood_cls,
@@ -77,7 +82,7 @@ model = JointGPLVM_Bayesian(yn_train,
                             use_shared_kernel=model_settings['use_shared_kernel'],
                             cls_weight=model_settings['cls_weight'],
                             reg_weight=model_settings['reg_weight'],
-                            random_state=random_tate)
+                            random_state=random_state)
 
 if model_settings['load_trained_model'] is False:
     losses, history_train = model.train_model(yn=yn_train, ys=ys_train,
@@ -91,7 +96,7 @@ else:
     losses = []
     model.load_weights(paths.model)
 
-if model_settings['use_gpytorch'] is False:
+if model.use_gpytorch_kernel is False:
     alpha_reg = model.kernel_reg.alpha.detach().numpy()
     alpha_cls = model.kernel_cls.alpha.detach().numpy()
     X = model.x.q_mu.detach().numpy()
@@ -120,7 +125,7 @@ animate_train(history_test['x_mu_list'], labels_test, 'test_animation_with_induc
               inducing_points_history=(history_test['z_list_reg'], history_test['z_list_cls']))
 
 inducing_points = (history_test['z_list_reg'][-1], history_test['z_list_cls'][-1])
-if model_settings['use_gpytorch'] is False:
+if model.use_gpytorch_kernel is False:
     alpha_reg = model.kernel_reg.alpha.detach().numpy()
     alpha_cls = model.kernel_cls.alpha.detach().numpy()
     x_test = model.x_test.q_mu.detach().numpy()
@@ -130,7 +135,6 @@ else:
     alpha_cls = 1 / model.kernel_cls.base_kernel.lengthscale.detach().numpy()
     x_test = model.x_test.q_mu.detach().numpy()
     std_test = torch.nn.functional.softplus(model.x_test.q_log_sigma).detach().numpy()
-
 
 plot_heatmap(X, labels_train, model, alpha_cls, cmap='winter', range_scale=1.2,
              file_name='latent_heatmap_train', inducing_points=inducing_points, save_path=paths.path_result[0])

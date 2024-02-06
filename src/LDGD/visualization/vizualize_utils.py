@@ -258,10 +258,10 @@ def plot_heatmap(x, labels, model, alpha, x_std=None, cmap='winter', range_scale
 
     if inducing_points is not None:
         z_reg, z_cls = inducing_points
-        z_reg1_min, z_reg1_max = np.min([0, z_reg[:, :, l1].min() * range_scale]), z_reg[:, :, l1].max() * range_scale
-        z_reg2_min, z_reg2_max = np.min([0, z_reg[:, :, l2].min() * range_scale]), z_reg[:, :, l2].max() * range_scale
-        z_cls1_min, z_cls1_max = np.min([0, z_cls[:, :, l1].min() * range_scale]), z_cls[:, :, l1].max() * range_scale
-        z_cls2_min, z_cls2_max = np.min([0, z_cls[:, :, l2].min() * range_scale]), z_cls[:, :, l2].max() * range_scale
+        z_reg1_min, z_reg1_max = np.min([0, z_reg[..., l1].min() * range_scale]), z_reg[..., l1].max() * range_scale
+        z_reg2_min, z_reg2_max = np.min([0, z_reg[..., l2].min() * range_scale]), z_reg[..., l2].max() * range_scale
+        z_cls1_min, z_cls1_max = np.min([0, z_cls[..., l1].min() * range_scale]), z_cls[..., l1].max() * range_scale
+        z_cls2_min, z_cls2_max = np.min([0, z_cls[..., l2].min() * range_scale]), z_cls[..., l2].max() * range_scale
 
         z1_min, z1_max = np.min([z_reg1_min, z_cls1_min]), np.max([z_reg1_max, z_cls1_max])
         z2_min, z2_max = np.min([z_reg2_min, z_cls2_min]), np.max([z_reg2_max, z_cls2_max])
@@ -314,11 +314,11 @@ def plot_heatmap(x, labels, model, alpha, x_std=None, cmap='winter', range_scale
     ax1.contour(xx, yy, prob_matrix, levels=[0.5], colors='k', label='Decision boundary')  # 'k' sets the color to black
 
     if inducing_points is not None:
-        ax1.scatter(z_cls[:, :, l1].ravel(),
-                    z_cls[:, :, l2].ravel(),
+        ax1.scatter(z_cls[..., l1].ravel(),
+                    z_cls[..., l2].ravel(),
                     c='r', marker='x', label='Classification inducing points')
-        ax1.scatter(z_reg[:, :, l1].ravel(),
-                    z_reg[:, :, l2].ravel(),
+        ax1.scatter(z_reg[..., l1].ravel(),
+                    z_reg[..., l2].ravel(),
                     c='blue', marker='x', label='Regression inducing points')
 
     # Setting labels with larger font size (like the previous figure)
@@ -374,7 +374,7 @@ def visualize_gp_synthetic_data(X, Y, sample_idx=0):
     # Plotting GP outputs (mean and confidence intervals) for each stimulus
     kernel = GPy.kern.Matern32(input_dim=2)
     for s in [0, 1]:
-        gp = GPy.models.GPRegression(X, Y[sample_idx, :, :].T, kernel)
+        gp = GPy.models.GPRegression(X, Y[sample_idx, ...].T, kernel)
         mu, C = gp.predict(X)
         axs[2 + s].plot(t, mu, 'b-', lw=2)
         axs[2 + s].fill_between(t, mu[:, 0] - 1.96 * np.sqrt(C[:, 0]), mu[:, 0] + 1.96 * np.sqrt(C[:, 0]), color='blue',

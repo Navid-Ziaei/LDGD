@@ -19,6 +19,8 @@ from linear_operator.operators import (
     SumLinearOperator,
     TriangularLinearOperator,
 )
+import gpytorch
+
 
 class VariationalLatentVariable(nn.Module):
     def __init__(self, n, data_dim, latent_dim, X_init, prior_x):
@@ -88,14 +90,19 @@ class VariationalDist(nn.Module):
 
 
 class CholeskeyVariationalDist(nn.Module):
-    def __init__(self, num_inducing_points, batch_shape):
+    def __init__(self, num_inducing_points, batch_shape, mean_init_std=1e-3):
         super(CholeskeyVariationalDist, self).__init__()
+
+        self.batch_shape = batch_shape
+        self.num_inducing_points = num_inducing_points
 
         mean_init = torch.zeros(num_inducing_points)
         covar_init = torch.eye(num_inducing_points, num_inducing_points)
 
         mean_init = mean_init.repeat(batch_shape, 1)
         covar_init = covar_init.repeat(batch_shape, 1, 1)
+
+        self.mean_init_std = mean_init_std
 
         self.register_parameter(name="mu", param=torch.nn.Parameter(mean_init))
         self.register_parameter(name="chol_variational_covar", param=torch.nn.Parameter(covar_init))
@@ -151,67 +158,54 @@ class CholeskeyVariationalDist(nn.Module):
         # Now construct the actual matrix
         variational_covar = CholLinearOperator(chol_variational_covar)
         q_u = torch.distributions.MultivariateNormal(self.mu, variational_covar.evaluate())
-        kl_per_point = torch.distributions.kl_divergence(q_u, prior_u) / n
+        kl_per_point = torch.distributions.kl_divergence(q_u, prior_u)
         return kl_per_point
 
-class DoublyVariationalStrategy(VariationalStrategy):
-    def __init__(self):
-        super(DoublyVariationalStrategy, self).__init__()
+    def shape(self):
+        return torch.Size([self.batch_shape, self.num_inducing_points])
 
-    def forward(
-        self,
-        x: Tensor,
-        inducing_points: Tensor,
-        inducing_values: Tensor,
-        variational_inducing_covar = None,
-        **kwargs,
-    ) -> MultivariateNormal:
-        # Compute full prior distribution
-        full_inputs = torch.cat([inducing_points, x], dim=-2)
-        full_output = self.model.forward(full_inputs, **kwargs)
-        full_covar = full_output.lazy_covariance_matrix
+    def initialize_variational_distribution(self, prior_dist: MultivariateNormal) -> None:
+        self.mu.data.copy_(prior_dist.mean)
+        self.mu.data.add_(torch.randn_like(prior_dist.mean), alpha=self.mean_init_std)
+        self.chol_variational_covar.data.copy_(prior_dist.lazy_covariance_matrix.cholesky().to_dense())
 
-        # Covariance terms
-        num_induc = inducing_points.size(-2)
-        test_mean = full_output.mean[..., num_induc:]
-        induc_induc_covar = full_covar[..., :num_induc, :num_induc].add_jitter(self.jitter_val)
-        induc_data_covar = full_covar[..., :num_induc, num_induc:].to_dense()
-        data_data_covar = full_covar[..., num_induc:, num_induc:]
 
-        # Compute interpolation terms
-        # K_ZZ^{-1/2} K_ZX
-        # K_ZZ^{-1/2} \mu_Z
-        L = self._cholesky_factor(induc_induc_covar)
-        if L.shape != induc_induc_covar.shape:
-            # Aggressive caching can cause nasty shape incompatibilies when evaluating with different batch shapes
-            # TODO: Use a hook fo this
-            try:
-                pop_from_cache_ignore_args(self, "cholesky_factor")
-            except CachingError:
-                pass
-            L = self._cholesky_factor(induc_induc_covar)
-        interp_term = L.solve(induc_data_covar.type(_linalg_dtype_cholesky.value())).to(full_inputs.dtype)
+class SharedVariationalStrategy(nn.Module):
+    def __init__(self, inducing_points, variational_distribution, jitter):
+        super(SharedVariationalStrategy, self).__init__()
+        self.jitter = jitter
+        self.m = inducing_points.shape[-2]
 
-        # Compute the mean of q(f)
-        # k_XZ K_ZZ^{-1/2} (m - K_ZZ^{-1/2} \mu_Z) + \mu_X
-        predictive_mean = (interp_term.transpose(-1, -2) @ inducing_values.unsqueeze(-1)).squeeze(-1) + test_mean
+        ones_mat = torch.ones(variational_distribution.shape())
+        result_tensors = torch.stack([torch.diag_embed(ones_mat[i]) for i in range(ones_mat.shape[0])])
+        self.prior = gpytorch.distributions.MultivariateNormal(torch.zeros(variational_distribution.shape()),
+                                                               result_tensors)
 
-        # Compute the covariance of q(f)
-        # K_XX + k_XZ K_ZZ^{-1/2} (S - I) K_ZZ^{-1/2} k_ZX
-        middle_term = self.prior_distribution.lazy_covariance_matrix.mul(-1)
-        if variational_inducing_covar is not None:
-            middle_term = SumLinearOperator(variational_inducing_covar, middle_term)
-
-        if trace_mode.on():
-            predictive_covar = (
-                data_data_covar.add_jitter(self.jitter_val).to_dense()
-                + interp_term.transpose(-1, -2) @ middle_term.to_dense() @ interp_term
-            )
+    def predictive_distribution(self, k_nn, k_mm, k_mn, variational_mean, variational_cov, whitening_parameters=True):
+        # k_mm = LL^T
+        L = torch.linalg.cholesky(k_mm)  # torch.cholesky(k_mm, upper=False)
+        m_d = variational_mean  # of size [D, M, 1]
+        if len(variational_cov.shape) > 2 and variational_cov.shape[1] == variational_cov.shape[2]:
+            s_d = variational_cov
         else:
-            predictive_covar = SumLinearOperator(
-                data_data_covar.add_jitter(self.jitter_val),
-                MatmulLinearOperator(interp_term.transpose(-1, -2), middle_term @ interp_term),
-            )
+            s_d = torch.diag_embed(variational_cov)  # of size [D, M, M] It's a eye matrix
 
-        # Return the distribution
-        return MultivariateNormal(predictive_mean, predictive_covar)
+        prior_dist_co = torch.eye(self.m)
+
+        if whitening_parameters is True:
+            # A = A=L^(-1) K_MN  (interp_term)
+            interp_term = torch.linalg.solve(L, k_mn)
+            # μ_f=A^T m_d^'
+            # Σ_f=A^T (S'-I)A
+            predictive_mean = (interp_term.transpose(-1, -2) @ m_d.unsqueeze(-1)).squeeze(-1)  # of size [D, N]
+            predictive_covar = interp_term.transpose(-1, -2) @ (s_d - prior_dist_co.unsqueeze(0)) @ interp_term
+        else:
+            # m_f = K_NM K_MM^(-1) m_d
+            # sigma_f = K_NM K_MM^(-1) (S_d-K_MM ) K_MM^(-1) K_MN
+            interp_term = torch.cholesky_solve(k_mn, L, upper=False)
+            predictive_mean = (interp_term.transpose(-1, -2) @ m_d.unsqueeze(-1)).squeeze(-1)  # of size [D, N]
+            predictive_covar = interp_term.transpose(-1, -2) @ (s_d - k_mm) @ interp_term
+        predictive_covar += k_nn
+        predictive_covar += torch.eye(k_nn.shape[-1]).squeeze(0) * self.jitter
+
+        return torch.distributions.MultivariateNormal(predictive_mean, predictive_covar)
