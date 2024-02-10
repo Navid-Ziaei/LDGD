@@ -23,7 +23,7 @@ import gpytorch
 
 
 class VariationalLatentVariable(nn.Module):
-    def __init__(self, n, data_dim, latent_dim, X_init, prior_x):
+    def __init__(self, n, data_dim, latent_dim, X_init, prior_x, device=None):
         super(VariationalLatentVariable, self).__init__()
         self.data_dim = data_dim
         self.prior_x = prior_x
@@ -38,6 +38,14 @@ class VariationalLatentVariable(nn.Module):
         self.kl_loss = None
         self.kl_loss_list = []
 
+        if device is not None:
+            self.device = device
+        else:
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+        self.to(device=self.device)
+
     @property
     def q_sigma(self):
         return torch.nn.functional.softplus(self.q_log_sigma)
@@ -50,15 +58,92 @@ class VariationalLatentVariable(nn.Module):
         # vector of size latent_dim
         kl_per_point = kl_per_latent_dim.sum() / self.n  # scalar
         self.kl_loss = kl_per_point / self.data_dim
-        self.kl_loss_list.append(self.kl_loss.detach().numpy())
+        self.kl_loss_list.append(self.kl_loss.cpu().detach().numpy())
         return q_x.rsample()
 
     def kl(self):
         n, q = self.q_mu.shape
         q_x = torch.distributions.Normal(self.q_mu, self.q_sigma)
-        kl_per_latent_dim = torch.distributions.kl_divergence(q_x, self.prior_x).sum(
-            axis=0)  # vector of size latent_dim
-        kl_per_point = kl_per_latent_dim.sum() / n  # scalar
+
+        # vector of size latent_dim
+        kl_per_latent_dim = torch.distributions.kl_divergence(q_x.to, self.prior_x).sum(axis=0)
+
+        kl_per_point = kl_per_latent_dim.sum() / n
+        kl_term = kl_per_point / q
+        return kl_term
+
+
+class VariationalLatentVariableNN(nn.Module):
+    def __init__(self, n, data_dim, latent_dim, X_init, prior_x, device=None):
+        super(VariationalLatentVariableNN, self).__init__()
+
+        if device is not None:
+            self.device = device
+        else:
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        self.data_dim = data_dim
+        self.prior_x = prior_x
+        self.n = n
+        self.data_dim = data_dim
+
+        hidden_dim = 50
+
+        self.encoder = nn.Sequential(
+            nn.Linear(data_dim, hidden_dim),
+            nn.LeakyReLU(0.2),
+            nn.Linear(hidden_dim, 10),
+            nn.LeakyReLU(0.2)
+        ).to(self.device)
+
+        # latent mean and variance
+        self.mean_layer = nn.Linear(10, latent_dim)
+        self.logvar_layer = nn.Linear(10, latent_dim)
+
+        # Local variational params per latent point with dimensionality latent_dim
+        self.kl_loss = None
+        self.kl_loss_list = []
+
+        self.to(device=self.device)
+
+    @property
+    def q_sigma(self, yn):
+        x = self.encoder(yn)
+        log_var = self.logvar_layer(x)
+        return torch.nn.functional.softplus(log_var)
+
+    @property
+    def q_mu(self, yn):
+        x = self.encoder(yn)
+        mean = self.mean_layer(x)
+        return mean
+
+    def encode(self, y_n):
+        x = self.encoder(y_n)
+        mean, log_var = self.mean_layer(x), self.logvar_layer(x)
+        return mean, log_var
+
+    def forward(self, y_n, num_samples=5):
+        mean, log_var = self.encode(y_n)
+
+        # Variational distribution over the latent variable q(x)
+        q_x = torch.distributions.Normal(mean, torch.nn.functional.softplus(log_var))
+
+        kl_per_latent_dim = torch.distributions.kl_divergence(q_x, self.prior_x).sum(axis=0)
+        # vector of size latent_dim
+        kl_per_point = kl_per_latent_dim.sum() / self.n  # scalar
+        self.kl_loss = kl_per_point / self.data_dim
+        self.kl_loss_list.append(self.kl_loss.cpu().detach().numpy())
+        return q_x.rsample()
+
+    def kl(self):
+        n, q = self.q_mu.shape
+        q_x = torch.distributions.Normal(self.q_mu, self.q_sigma)
+
+        # vector of size latent_dim
+        kl_per_latent_dim = torch.distributions.kl_divergence(q_x.to, self.prior_x).sum(axis=0)
+
+        kl_per_point = kl_per_latent_dim.sum() / n
         kl_term = kl_per_point / q
         return kl_term
 
@@ -90,14 +175,19 @@ class VariationalDist(nn.Module):
 
 
 class CholeskeyVariationalDist(nn.Module):
-    def __init__(self, num_inducing_points, batch_shape, mean_init_std=1e-3):
+    def __init__(self, num_inducing_points, batch_shape, mean_init_std=1e-3, device=None):
         super(CholeskeyVariationalDist, self).__init__()
+
+        if device is not None:
+            self.device = device
+        else:
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self.batch_shape = batch_shape
         self.num_inducing_points = num_inducing_points
 
-        mean_init = torch.zeros(num_inducing_points)
-        covar_init = torch.eye(num_inducing_points, num_inducing_points)
+        mean_init = torch.zeros(num_inducing_points, device=self.device)
+        covar_init = torch.eye(num_inducing_points, num_inducing_points, device=self.device)
 
         mean_init = mean_init.repeat(batch_shape, 1)
         covar_init = covar_init.repeat(batch_shape, 1, 1)
@@ -112,7 +202,7 @@ class CholeskeyVariationalDist(nn.Module):
         chol_variational_covar = self.chol_variational_covar
 
         # First make the cholesky factor is upper triangular
-        lower_mask = torch.ones(self.chol_variational_covar.shape[-2:]).tril(0)
+        lower_mask = torch.ones(self.chol_variational_covar.shape[-2:], device=self.device).tril(0)
         chol_variational_covar = TriangularLinearOperator(chol_variational_covar.mul(lower_mask))
 
         # Now construct the actual matrix
@@ -171,15 +261,21 @@ class CholeskeyVariationalDist(nn.Module):
 
 
 class SharedVariationalStrategy(nn.Module):
-    def __init__(self, inducing_points, variational_distribution, jitter):
+    def __init__(self, inducing_points, variational_distribution, jitter, device=None):
         super(SharedVariationalStrategy, self).__init__()
+        if device is not None:
+            self.device = device
+        else:
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.jitter = jitter
         self.m = inducing_points.shape[-2]
 
         ones_mat = torch.ones(variational_distribution.shape())
         result_tensors = torch.stack([torch.diag_embed(ones_mat[i]) for i in range(ones_mat.shape[0])])
-        self.prior = gpytorch.distributions.MultivariateNormal(torch.zeros(variational_distribution.shape()),
-                                                               result_tensors)
+        result_tensors = result_tensors.to(self.device)
+        self.prior = gpytorch.distributions.MultivariateNormal(
+            torch.zeros(variational_distribution.shape(), device=self.device),
+            result_tensors)
 
     def predictive_distribution(self, k_nn, k_mm, k_mn, variational_mean, variational_cov, whitening_parameters=True):
         # k_mm = LL^T
@@ -190,7 +286,7 @@ class SharedVariationalStrategy(nn.Module):
         else:
             s_d = torch.diag_embed(variational_cov)  # of size [D, M, M] It's a eye matrix
 
-        prior_dist_co = torch.eye(self.m)
+        prior_dist_co = torch.eye(self.m, device=self.device)
 
         if whitening_parameters is True:
             # A = A=L^(-1) K_MN  (interp_term)
@@ -206,6 +302,6 @@ class SharedVariationalStrategy(nn.Module):
             predictive_mean = (interp_term.transpose(-1, -2) @ m_d.unsqueeze(-1)).squeeze(-1)  # of size [D, N]
             predictive_covar = interp_term.transpose(-1, -2) @ (s_d - k_mm) @ interp_term
         predictive_covar += k_nn
-        predictive_covar += torch.eye(k_nn.shape[-1]).squeeze(0) * self.jitter
+        predictive_covar += torch.eye(k_nn.shape[-1], device=self.device).squeeze(0) * self.jitter
 
         return torch.distributions.MultivariateNormal(predictive_mean, predictive_covar)

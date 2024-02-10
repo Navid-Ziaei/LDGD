@@ -1,5 +1,5 @@
 from ..model.utils.variational import VariationalDist, VariationalLatentVariable, \
-    CholeskeyVariationalDist, SharedVariationalStrategy
+    CholeskeyVariationalDist, SharedVariationalStrategy, VariationalLatentVariableNN
 from ..visualization import plot_loss
 from ..model.utils.variational_strategy import VariationalStrategy2
 
@@ -13,22 +13,29 @@ from torch import optim
 from sklearn.metrics import classification_report, accuracy_score, precision_score, recall_score, f1_score
 
 
-class JointGPLVM_Bayesian(nn.Module):
+class FastLDGD(nn.Module):
     def __init__(self, y, kernel_reg, kernel_cls, likelihood_reg, likelihood_cls, latent_dim=2,
                  num_inducing_points=10,
                  num_inducing_points_reg=10,
                  num_inducing_points_cls=10,
                  num_classes=3,
                  inducing_points=None,
-                 use_gpytorch=False,
+                 use_gpytorch=True,
                  shared_inducing_points=False,
                  use_shared_kernel=False,
                  cls_weight=1.0,
                  reg_weight=1.0,
-                 random_state=None):
-        super(JointGPLVM_Bayesian, self).__init__()
+                 random_state=None,
+                 device=None):
+        super(FastLDGD, self).__init__()
+        if random_state is not None:
+            torch.manual_seed(random_state)
 
-        torch.manual_seed(random_state)
+        if device is not None:
+            self.device = device
+        else:
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
         self.whitening_parameters = True
         self.x_test = None
         self.n_test = None
@@ -60,14 +67,13 @@ class JointGPLVM_Bayesian(nn.Module):
         self.m_cls = num_inducing_points_cls
         self.d = y.shape[1]  # Number of featurea
         self.q = latent_dim  # Number of hidden space dimensions
-        self.log_noise_sigma = nn.Parameter(torch.ones(1) * -2)
+        self.log_noise_sigma = nn.Parameter(torch.ones(1, device=self.device) * -2)
         self.k = num_classes
         self.shared_inducing_points = shared_inducing_points
 
         self.batch_shape_reg = torch.Size([self.d])
         self.batch_shape_cls = torch.Size([self.k])
 
-        torch.manual_seed(42)
         if inducing_points is None:
             if self.shared_inducing_points is True:
                 self.inducing_inputs_cls = nn.Parameter(torch.randn(self.m_cls, self.q))
@@ -76,10 +82,19 @@ class JointGPLVM_Bayesian(nn.Module):
                 # Concatenate along the first dimension to form the final inducing_inputs
                 self.inducing_inputs = torch.cat((self.inducing_inputs_reg, self.inducing_inputs_cls), dim=0)
             else:
-                self.inducing_inputs_cls = nn.Parameter(torch.randn(self.k, num_inducing_points, self.q))
-                self.inducing_inputs_reg = nn.Parameter(torch.randn(self.d, num_inducing_points, self.q))
+                # self.inducing_inputs_cls = nn.Parameter(torch.randn(self.k, num_inducing_points, self.q))
+                # self.inducing_inputs_reg = nn.Parameter(torch.randn(self.d, num_inducing_points, self.q))
 
-                self.inducing_inputs = torch.cat((self.inducing_inputs_reg, self.inducing_inputs_cls), dim=0)
+                self.inducing_inputs_cls = torch.randn(num_inducing_points, self.q, device=self.device)
+                self.inducing_inputs_reg = torch.randn(num_inducing_points, self.q, device=self.device)
+
+                # Replicate inducing_inputs_cls k times and inducing_inputs_reg d times
+                cls_repeated = self.inducing_inputs_cls.repeat(self.k, 1, 1)
+                reg_repeated = self.inducing_inputs_reg.repeat(self.d, 1, 1)
+
+                self.inducing_inputs = torch.cat((cls_repeated, reg_repeated), dim=0)
+                self.m_reg = self.m
+                self.m_cls = self.m
             self.min_value = 0.001
         else:
             self.inducing_inputs = nn.Parameter(inducing_points)
@@ -87,9 +102,9 @@ class JointGPLVM_Bayesian(nn.Module):
 
         x_init = torch.randn(self.n, self.q)
         if self.use_gpytorch is True:
-            x_prior_mean = torch.zeros(self.n, self.q)  # shape: N x Q
-            self.prior_x = gpytorch.priors.NormalPrior(x_prior_mean, torch.ones_like(x_prior_mean))
-            self.x = gpytorch.models.gplvm.VariationalLatentVariable(self.n, self.d, self.q, x_init, self.prior_x)
+            x_prior_mean = torch.zeros(self.n, self.q, device=self.device)  # shape: N x Q
+            self.prior_x = gpytorch.priors.NormalPrior(x_prior_mean, torch.ones_like(x_prior_mean, device=self.device))
+            self.x = VariationalLatentVariableNN(self.n, self.d, self.q, x_init, self.prior_x)
 
             self.q_u_reg = gpytorch.variational.CholeskyVariationalDistribution(self.m_reg,
                                                                                 batch_shape=self.batch_shape_reg)
@@ -105,8 +120,9 @@ class JointGPLVM_Bayesian(nn.Module):
                                                                     variational_distribution=self.q_u_cls,
                                                                     learn_inducing_locations=True)
         else:
-            self.prior_x = torch.distributions.Normal(torch.zeros(self.n, self.q), torch.ones(self.n, self.q))
-            self.x = VariationalLatentVariable(self.n, self.d, self.q, X_init=x_init, prior_x=self.prior_x)
+            self.prior_x = torch.distributions.Normal(torch.zeros(self.n, self.q, device=self.device),
+                                                      torch.ones(self.n, self.q, device=self.device))
+            self.x = VariationalLatentVariableNN(self.n, self.d, self.q, X_init=x_init, prior_x=self.prior_x)
 
             self.q_u_reg = CholeskeyVariationalDist(num_inducing_points=self.m_reg, batch_shape=self.d)
             self.q_u_cls = CholeskeyVariationalDist(num_inducing_points=self.m_cls, batch_shape=self.k)
@@ -119,7 +135,7 @@ class JointGPLVM_Bayesian(nn.Module):
                                                      variational_distribution=self.q_u_reg,
                                                      jitter=self.jitter)
 
-            self.log_noise_sigma = nn.Parameter(torch.ones(self.d) * -2)
+            self.log_noise_sigma = nn.Parameter(torch.ones(self.d, device=self.device) * -2)
 
         self.history_train = {
             'elbo_loss': [],
@@ -130,6 +146,8 @@ class JointGPLVM_Bayesian(nn.Module):
             'mse_loss': []
         }
         self.history_test = {}
+
+        self.to(device=self.device)
 
     @property
     def noise_sigma(self):
@@ -151,8 +169,8 @@ class JointGPLVM_Bayesian(nn.Module):
         x = x.expand(*batch_shape, *x.shape[-2:])
         return x, inducing_points
 
-    def sample_latent_variable(self):
-        return self.x()
+    def sample_latent_variable(self, yn):
+        return self.x(yn)
 
     def compute_statistics(self):
         x_samples = self.sample_latent_variable()
@@ -175,7 +193,7 @@ class JointGPLVM_Bayesian(nn.Module):
         x_samples, z = self._expand_inputs(x_samples, self.inducing_inputs_cls)
         if self.use_gpytorch_kernel is False:
             k_nn_cls = self.kernel_cls(x_samples, x_samples) + \
-                       torch.eye(batch_size).unsqueeze(0) * self.jitter  # of size [D, N, N]
+                       torch.eye(batch_size, device=self.device).unsqueeze(0) * self.jitter  # of size [D, N, N]
             k_mm_cls = self.kernel_cls(self.inducing_inputs_cls,
                                        self.inducing_inputs_cls)  # of size [D, M, M]
             k_mn_cls = self.kernel_cls(self.inducing_inputs_cls, x_samples)
@@ -185,21 +203,25 @@ class JointGPLVM_Bayesian(nn.Module):
                                        self.inducing_inputs_cls).evaluate()  # of size [D, M, M]
             k_mn_cls = self.kernel_cls(self.inducing_inputs_cls, x_samples).evaluate()
 
-        k_mm_cls += torch.eye(k_mm_cls.shape[-1]) * self.jitter
+        k_mm_cls += torch.eye(k_mm_cls.shape[-1], device=self.device) * self.jitter
 
         predictive_dist_cls = self.q_f_cls.predictive_distribution(k_nn_cls, k_mm_cls,
                                                                    k_mn_cls, variational_mean=self.q_u_cls.mu,
                                                                    variational_cov=self.q_u_cls.sigma,
                                                                    whitening_parameters=self.whitening_parameters)
+
         ell_cls_value = self.likelihood_cls.expected_log_prob(ys.t(), predictive_dist_cls).mean(-1)
 
         if self.whitening_parameters is False:
-            prior_p_u_cls = torch.distributions.MultivariateNormal(torch.zeros(self.m_cls, ), k_mm_cls)
+            prior_p_u_cls = torch.distributions.MultivariateNormal(torch.zeros(self.m_cls, ),
+                                                                   k_mm_cls)
         else:
-            ones_mat = torch.ones(self.q_u_cls.shape())
+            ones_mat = torch.ones(self.q_u_cls.shape(), device=self.device)
             result_tensors = torch.stack([torch.diag_embed(ones_mat[i]) for i in range(ones_mat.shape[0])])
-            prior_p_u_cls = gpytorch.distributions.MultivariateNormal(torch.zeros(self.q_u_cls.shape()),
-                                                                      result_tensors)
+            result_tensors = result_tensors.to(self.device)
+            prior_p_u_cls = gpytorch.distributions.MultivariateNormal(
+                torch.zeros(self.q_u_cls.shape(), device=self.device),
+                result_tensors)
 
         kl_u_cls = self.q_u_cls.kl(prior_u=prior_p_u_cls).div(self.n)
 
@@ -232,16 +254,16 @@ class JointGPLVM_Bayesian(nn.Module):
 
         x_samples, z = self._expand_inputs(x_samples, self.inducing_inputs_reg)
         if self.use_gpytorch_kernel is False:
-            k_nn_reg = self.kernel_reg(x_samples, x_samples) + torch.eye(batch_size).unsqueeze(0) * self.jitter
+            k_nn_reg = self.kernel_reg(x_samples, x_samples) + torch.eye(batch_size, device=self.device).unsqueeze(0) * self.jitter
             k_mm_reg = self.kernel_reg(self.inducing_inputs_reg, self.inducing_inputs_reg)  # of size [D, M, M]
             k_mn_reg = self.kernel_reg(self.inducing_inputs_reg, x_samples)
         else:
             k_nn_reg = self.kernel_reg(x_samples, x_samples).evaluate() + \
-                       torch.eye(batch_size).unsqueeze(0) * self.jitter  # of size [D, N, N]
+                       torch.eye(batch_size, device=self.device).unsqueeze(0) * self.jitter  # of size [D, N, N]
             k_mm_reg = self.kernel_reg(self.inducing_inputs_reg, self.inducing_inputs_reg).evaluate()  # of size[D,M,M]
             k_mn_reg = self.kernel_reg(self.inducing_inputs_reg, x_samples).evaluate()
 
-        k_mm_reg += torch.eye(k_mm_reg.shape[-1]) * self.jitter
+        k_mm_reg += torch.eye(k_mm_reg.shape[-1], device=self.device) * self.jitter
 
         predictive_dist_reg = self.q_f_reg.predictive_distribution(k_nn_reg, k_mm_reg,
                                                                    k_mn_reg,
@@ -251,12 +273,15 @@ class JointGPLVM_Bayesian(nn.Module):
         ell_reg = self.likelihood_reg.expected_log_prob(yn.t(), predictive_dist_reg).mean(-1)
 
         if self.whitening_parameters is False:
-            prior_p_u_reg = torch.distributions.MultivariateNormal(torch.zeros(self.m_reg, ), k_mm_reg)
+            prior_p_u_reg = torch.distributions.MultivariateNormal(torch.zeros(self.m_reg, ), k_mm_reg,
+                                                                   device=self.device)
         else:
-            ones_mat = torch.ones(self.q_u_reg.shape())
+            ones_mat = torch.ones(self.q_u_reg.shape(), device=self.device)
             result_tensors = torch.stack([torch.diag_embed(ones_mat[i]) for i in range(ones_mat.shape[0])])
-            prior_p_u_reg = gpytorch.distributions.MultivariateNormal(torch.zeros(self.q_u_reg.shape()),
-                                                                      result_tensors)
+            result_tensors = result_tensors.to(self.device)
+            prior_p_u_reg = gpytorch.distributions.MultivariateNormal(
+                torch.zeros(self.q_u_reg.shape(), device=self.device),
+                result_tensors)
         kl_u_reg = self.q_u_reg.kl(prior_u=prior_p_u_reg).div(self.n)
 
         return ell_reg, kl_u_reg
@@ -286,7 +311,7 @@ class JointGPLVM_Bayesian(nn.Module):
             if ys is not None:
                 ell_cls, kl_u_cls = self.ell_cls_pytorch(x_samples=x_samples, ys=ys)
             ell_reg, kl_u_reg = self.ell_reg_pytorch(x_samples=x_samples, yn=yn)
-            kl_x = x._added_loss_terms['x_kl'].loss()
+            kl_x = x.kl_loss #x._added_loss_terms['x_kl'].loss()
         else:
             if ys is not None:
                 ell_cls, kl_u_cls = self.ell_cls_scratch(x_samples=x_samples, ys=ys)
@@ -342,22 +367,32 @@ class JointGPLVM_Bayesian(nn.Module):
         if x_test is not None:
             self.n_test = x_test.shape[0]
             X_init = torch.randn(self.n_test, self.q)
-            prior_x_test = torch.distributions.Normal(torch.zeros(self.n_test, self.q), torch.ones(self.n_test, self.q))
+            prior_x_test = torch.distributions.Normal(torch.zeros(self.n_test, self.q, device=self.device),
+                                                      torch.ones(self.n_test, self.q, device=self.device))
             self.x_test = VariationalLatentVariable(self.n_test, self.d, self.q, X_init=X_init, prior_x=prior_x_test)
 
         self.load_state_dict(torch.load(path_save + file_name))
 
-    def train_model(self, yn, ys, learning_rate=0.01, epochs=100, batch_size=100, early_stop=None):
+    def train_model(self, yn, ys, learning_rate=0.01, epochs=100, batch_size=100, early_stop=None, show_plot=False):
         optimizer = optim.Adam(self.parameters(), lr=learning_rate)
         losses, x_mu_list, x_sigma_list, z_list_cls, z_list_reg = [], [], [], [], []
         for epoch in range(epochs):
             batch_index = self._get_batch_idx(batch_size, self.n)
 
             optimizer.zero_grad()
-            x = self.sample_latent_variable()
-            sample_batch = x[batch_index]
-            loss = -self.elbo(sample_batch, self.x, yn[batch_index], ys[batch_index])
+
+            yn_batch = yn[batch_index].to(self.device)
+            ys_batch = ys[batch_index].to(self.device)
+            sample_batch = self.sample_latent_variable(yn_batch)
+
+            # sample_batch = x[batch_index]
+            # sample_batch = sample_batch.to(self.device)
+
+            # Calculate loss
+            loss = -self.elbo(sample_batch, self.x, yn_batch, ys_batch)
             losses.append(loss.item())
+
+            # Back propagate error
             loss.backward()
             optimizer.step()
 
@@ -372,7 +407,8 @@ class JointGPLVM_Bayesian(nn.Module):
                             print("Early stop")
                             break
 
-        plot_loss(losses)
+        if show_plot is True:
+            plot_loss(losses)
 
         return losses, self.history_train
 
@@ -380,60 +416,11 @@ class JointGPLVM_Bayesian(nn.Module):
         if yn_test.shape[1] != self.d:
             raise ValueError(f"yn_test should be of size [num_test, {self.d}]")
 
-        for param in self.parameters():
-            param.requires_grad = False
-
-        self.history_test = {
-            'elbo_loss': [],
-            'x_mu_list': [],
-            'x_sigma_list': [],
-            'z_list_cls': [],
-            'z_list_reg': [],
-            'mse_loss': []
-        }
-
+        self.history_test = None
         self.n_test = yn_test.shape[0]
 
-        ys_test_list = []
-        for k in range(self.k):
-            y_test = torch.zeros(self.n_test, self.k)
-            y_test[:, k] = 1
-            ys_test_list.append(y_test)
-
-        X_init = torch.randn(self.n_test, self.q)
-        if self.use_gpytorch is True:
-            x_prior_mean = torch.zeros(self.n_test, self.q)
-            prior_x = gpytorch.priors.NormalPrior(x_prior_mean, torch.ones_like(x_prior_mean))
-            self.x_test = gpytorch.models.gplvm.VariationalLatentVariable(self.n_test, self.d, self.q, X_init, prior_x)
-        else:
-            prior_x_test = torch.distributions.Normal(torch.zeros(self.n_test, self.q), torch.ones(self.n_test, self.q))
-            self.x_test = VariationalLatentVariable(self.n_test, self.d, self.q, X_init=X_init, prior_x=prior_x_test)
-
-        params_to_optimize = self.x_test.parameters()
-        optimizer = optim.Adam(params_to_optimize, lr=learning_rate)
-
-        losses, x_mu_list, x_sigma_list, z_list_reg, z_list_cls = [], [], [], [], []
-        for epoch in range(epochs):
-            batch_index = self._get_batch_idx(batch_size, self.n_test)
-            optimizer.zero_grad()
-            x_test = self.x_test()
-            x_test_sampled = x_test[batch_index]
-            loss = -self.elbo(x_test_sampled, self.x_test, yn_test[batch_index])
-            losses.append(loss.item())
-            loss.backward(retain_graph=True)
-            optimizer.step()
-
-            if epoch % 10 == 0:
-                mse_loss = self.update_history_test(yn_test, elbo_loss=loss.item())
-                print(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}, MSE: {mse_loss}")
-                if early_stop is not None:
-                    if len(losses) > 100:
-                        ce = np.abs(losses[-1] - np.mean(losses[-100:])) / np.abs(np.mean(losses[-100:]))
-                        if ce < early_stop:
-                            print("Early stop")
-                            break
-
-        predictions, *_ = self.classify_x(self.x_test.q_mu)
+        x_test_mu, x_test_logvar = self.x.encode(yn_test.to(self.device))
+        predictions, *_ = self.classify_x(x_test_mu)
         return predictions, self.history_test
 
     def classify_x(self, x):
@@ -443,35 +430,38 @@ class JointGPLVM_Bayesian(nn.Module):
             if self.inducing_inputs_cls.shape[:-2] != x_test_sampled.shape[:-2]:
                 x_test_sampled, inducing_points = self._expand_inputs(x_test_sampled, self.inducing_inputs_cls)
 
+            x_test_sampled = x_test_sampled.to(self.device)
             predictive_dist_cls = self.q_f_cls(x=x_test_sampled, mode='cls')
-            predictions = self.likelihood_cls(predictive_dist_cls.mean).mean.argmax(dim=0)
-            predictions_probs = self.likelihood_cls(predictive_dist_cls.mean).mean.detach().numpy()
+
+            predictions_probs = self.likelihood_cls(predictive_dist_cls.mean).mean.cpu().detach().numpy()
+            predictions = predictions_probs.argmax(axis=0)
         else:
             batch_size = 500
             predictions, predictions_probs = [], []
             for i in range(0, x.shape[0], batch_size):
                 new_batch_size = np.min([i + batch_size, x.shape[0]]) - i
-                x_test_sampled = x[i:np.min([i + batch_size, x.shape[0]])]
+                x_test_sampled = x[i:np.min([i + batch_size, x.shape[0]])].to(self.device)
                 x_samples, z = self._expand_inputs(x_test_sampled, self.inducing_inputs_cls)
                 if self.use_gpytorch_kernel is False:
                     k_nn_cls = self.kernel_cls(x_samples, x_samples) + \
-                               torch.eye(new_batch_size).unsqueeze(0) * self.jitter  # of size [D, N, N]
+                               torch.eye(new_batch_size, device=self.device).unsqueeze(0) * self.jitter  # of size [D, N, N]
                     k_mm_cls = self.kernel_cls(self.inducing_inputs_cls, self.inducing_inputs_cls)  # of size [D, M, M]
                     k_mn_cls = self.kernel_cls(self.inducing_inputs_cls, x_samples)
                 else:
                     k_nn_cls = self.kernel_cls(x_samples, x_samples).evaluate() + \
-                               torch.eye(new_batch_size).unsqueeze(0) * self.jitter  # of size [D, N, N]
+                               torch.eye(new_batch_size, device=self.device).unsqueeze(0) * self.jitter  # of size [D, N, N]
                     k_mm_cls = self.kernel_cls(self.inducing_inputs_cls, self.inducing_inputs_cls).evaluate()
                     k_mn_cls = self.kernel_cls(self.inducing_inputs_cls, x_samples).evaluate()
 
-                k_mm_cls += torch.eye(k_mm_cls.shape[-1]) * self.jitter
+                k_mm_cls += torch.eye(k_mm_cls.shape[-1], device=self.device) * self.jitter
 
                 predictive_dist_cls = self.q_f_cls.predictive_distribution(k_nn_cls, k_mm_cls,
                                                                            k_mn_cls,
                                                                            variational_mean=self.q_u_cls.mu,
                                                                            variational_cov=self.q_u_cls.sigma)
-                predictions_probs.append(self.likelihood_cls(predictive_dist_cls.mean).mean.detach().numpy())
-                predictions.append(self.likelihood_cls(predictive_dist_cls.mean).mean.argmax(dim=0))
+                probs = self.likelihood_cls(predictive_dist_cls.mean).mean.cpu().detach().numpy()
+                predictions_probs.append(probs)
+                predictions.append(probs.argmax(axis=0))
             predictions = np.concatenate(predictions, axis=0)
             predictions_probs = np.concatenate(predictions_probs, axis=1)
         return predictions, predictions_probs
@@ -479,6 +469,7 @@ class JointGPLVM_Bayesian(nn.Module):
     def regress_x(self, x):
         if self.use_gpytorch is True:
             x_test_sampled = torch.Tensor(x)
+            x_test_sampled = x_test_sampled.to(self.device)
 
             inducing_points = self.inducing_inputs_reg
             if inducing_points.shape[:-2] != x_test_sampled.shape[:-2]:
@@ -493,22 +484,22 @@ class JointGPLVM_Bayesian(nn.Module):
             predictions_mean, predictions_std = [], []
             for i in range(0, x.shape[0], batch_size):
                 new_batch_size = np.min([i + batch_size, x.shape[0]]) - i
-                x_test_sampled = torch.Tensor(x[i:np.min([i + batch_size, x.shape[0]])])
+                x_test_sampled = torch.Tensor(x[i:np.min([i + batch_size, x.shape[0]])]).to(self.device)
                 x_samples, z = self._expand_inputs(x_test_sampled, self.inducing_inputs_reg)
                 if self.use_gpytorch_kernel is False:
                     k_nn_reg = self.kernel_reg(x_samples, x_samples) + \
-                               torch.eye(new_batch_size).unsqueeze(0) * self.jitter  # of size [D, N, N]
+                               torch.eye(new_batch_size, device=self.device).unsqueeze(0) * self.jitter  # of size [D, N, N]
                     k_mm_reg = self.kernel_reg(self.inducing_inputs_reg,
                                                self.inducing_inputs_reg)  # of size [D, M, M]
                     k_mn_reg = self.kernel_reg(self.inducing_inputs_reg, x_samples)
                 else:
                     k_nn_reg = self.kernel_reg(x_samples, x_samples).evaluate() + \
-                               torch.eye(new_batch_size).unsqueeze(0) * self.jitter  # of size [D, N, N]
+                               torch.eye(new_batch_size, device=self.device).unsqueeze(0) * self.jitter  # of size [D, N, N]
                     k_mm_reg = self.kernel_reg(self.inducing_inputs_reg,
                                                self.inducing_inputs_reg).evaluate()  # of size [D, M, M]
                     k_mn_reg = self.kernel_reg(self.inducing_inputs_reg, x_samples).evaluate()
 
-                k_mm_reg += torch.eye(k_mm_reg.shape[-1]) * self.jitter
+                k_mm_reg += torch.eye(k_mm_reg.shape[-1], device=self.device) * self.jitter
 
                 predictive_dist_reg = self.q_f_reg.predictive_distribution(k_nn_reg, k_mm_reg,
                                                                            k_mn_reg,
@@ -544,43 +535,47 @@ class JointGPLVM_Bayesian(nn.Module):
     def update_history_train(self, yn, elbo_loss):
 
         if self.use_gpytorch is False:
-            x_mu = self.x.q_mu.detach().numpy()
-            x_sigma = self.x.q_sigma.detach().numpy()
+            x_mu, x_sigma = self.x.encode(yn.to(self.device))
+            x_mu = x_mu.cpu().detach().numpy()
+            x_sigma = x_sigma.cpu().detach().numpy()
+            #x_mu = self.x.q_mu.cpu().detach().numpy()
+            #x_sigma = torch.nn.functional.softplus(self.x.q_log_sigma.cpu()).detach().numpy()
             self.history_train['elbo_loss'].append(elbo_loss)
             self.history_train['x_mu_list'].append(x_mu.copy())
             self.history_train['x_sigma_list'].append(x_sigma.copy())
-            self.history_train['z_list_cls'].append(self.inducing_inputs_cls.detach().numpy().copy())
-            self.history_train['z_list_reg'].append(self.inducing_inputs_reg.detach().numpy().copy())
+            self.history_train['z_list_cls'].append(self.inducing_inputs_cls.cpu().detach().numpy().copy())
+            self.history_train['z_list_reg'].append(self.inducing_inputs_reg.cpu().detach().numpy().copy())
         else:
-            x_mu = self.x.q_mu.detach().numpy()
-            x_sigma = torch.nn.functional.softplus(self.x.q_log_sigma).detach().numpy()
+            x_mu, x_sigma = self.x.encode(yn.to(self.device))
+            x_mu = x_mu.cpu().detach().numpy()
+            x_sigma = x_sigma.cpu().detach().numpy()
             self.history_train['x_mu_list'].append(x_mu.copy())
             self.history_train['x_sigma_list'].append(x_sigma.copy())
-            self.history_train['z_list_cls'].append(self.q_f_cls.inducing_points.detach().numpy().copy())
-            self.history_train['z_list_reg'].append(self.q_f_reg.inducing_points.detach().numpy().copy())
+            self.history_train['z_list_cls'].append(self.q_f_cls.inducing_points.cpu().detach().numpy().copy())
+            self.history_train['z_list_reg'].append(self.q_f_reg.inducing_points.cpu().detach().numpy().copy())
 
         predicted_yn, predicted_yn_std = self.regress_x(x_mu)
-        mse_loss = np.mean(np.square(yn.detach().numpy() - predicted_yn.detach().numpy()))
+        mse_loss = np.mean(np.square(yn.cpu().detach().numpy() - predicted_yn.cpu().detach().numpy()))
         self.history_train['mse_loss'].append(mse_loss)
         return mse_loss
 
     def update_history_test(self, yn_test, elbo_loss):
         if self.use_gpytorch is False:
-            x_mu = self.x_test.q_mu.detach().numpy()
-            x_sigma = self.x_test.q_sigma.detach().numpy()
+            x_mu = self.x_test.q_mu.cpu().detach().numpy()
+            x_sigma = self.x_test.q_sigma.cpu().detach().numpy()
             self.history_test['elbo_loss'].append(elbo_loss)
             self.history_test['x_mu_list'].append(x_mu.copy())
             self.history_test['x_sigma_list'].append(x_sigma.copy())
-            self.history_test['z_list_cls'].append(self.inducing_inputs_cls.detach().numpy().copy())
-            self.history_test['z_list_reg'].append(self.inducing_inputs_reg.detach().numpy().copy())
+            self.history_test['z_list_cls'].append(self.inducing_inputs_cls.cpu().detach().numpy().copy())
+            self.history_test['z_list_reg'].append(self.inducing_inputs_reg.cpu().detach().numpy().copy())
         else:
-            x_mu = self.x_test.q_mu.detach().numpy()
-            x_sigma = self.x_test.q_log_sigma.detach().numpy()
+            x_mu = self.x_test.q_mu.cpu().detach().numpy()
+            x_sigma = self.x_test.q_log_sigma.cpu().detach().numpy()
             self.history_test['x_mu_list'].append(x_mu.copy())
             self.history_test['x_sigma_list'].append(x_sigma.copy())
-            self.history_test['z_list_cls'].append(self.q_f_cls.inducing_points.detach().numpy().copy())
-            self.history_test['z_list_reg'].append(self.q_f_reg.inducing_points.detach().numpy().copy())
+            self.history_test['z_list_cls'].append(self.q_f_cls.inducing_points.cpu().detach().numpy().copy())
+            self.history_test['z_list_reg'].append(self.q_f_reg.inducing_points.cpu().detach().numpy().copy())
         predicted_yn, predicted_yn_std = self.regress_x(x_mu)
-        mse_loss = np.mean(np.square(yn_test.detach().numpy() - predicted_yn.detach().numpy()))
+        mse_loss = np.mean(np.square(yn_test.cpu().detach().numpy() - predicted_yn.cpu().detach().numpy()))
         self.history_test['mse_loss'].append(mse_loss)
         return mse_loss

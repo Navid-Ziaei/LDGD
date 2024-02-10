@@ -38,6 +38,8 @@ def generate_data(pattern, n_samples=100, noise=0.1, n_features=50, increase_met
     else:
         raise ValueError("Invalid pattern")
 
+    orig_data = (X, y)
+
     increase_method = 'linear'
     np.random.seed(random_state)
     # add noise dimensions
@@ -91,7 +93,7 @@ def generate_data(pattern, n_samples=100, noise=0.1, n_features=50, increase_met
     else:
         raise ValueError("The increase dimension method is not defind")
 
-    return X, y
+    return X, y, orig_data
 
 
 def load_dataset(dataset_name, test_size=0.1, **kwargs):
@@ -134,7 +136,7 @@ def load_dataset(dataset_name, test_size=0.1, **kwargs):
         increase_method = kwargs.get('increase_method', 'linear')
 
         # Generate synthetic data
-        X, y = generate_data(pattern, n_samples, noise, n_features, increase_method, random_state=random_state)
+        X, y, _ = generate_data(pattern, n_samples, noise, n_features, increase_method, random_state=random_state)
     else:
         raise ValueError(f"Dataset should be from {supported_datasets}")
 

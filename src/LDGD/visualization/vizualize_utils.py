@@ -11,173 +11,111 @@ import torch
 import matplotlib.pyplot as plt
 
 seaborn.set(style="white", color_codes=True)
+AXIS_LABEL_FONTSIZE = 32
+TICKS_LABEL_FONTSIZE = 28
+LEGEND_FONTSIZE = 24
 
 
-class DataVisualizer:
-    def __init__(self, data, label_name=None):
-        self.fs = data.fs
-        self.time = data.time
-        if isinstance(data.label, pd.DataFrame):
-            self.label = data.label.values.astype(int)
-        else:
-            self.label = data.label.astype(int)
-        self.channel_name = data.channel_name
-        if label_name is None:
-            self.label_name = [str(i) for i in range(len(np.unique(self.label)))]
-        else:
-            self.label_name = label_name
+def plot_2d_scatter(X, y, save_path=None, ax=None, fig=None):
+    if ax is None:
+        fig, ax = plt.subplots(1, figsize=(12, 8))
 
-    def plot_single_channel_data(self, data, trial_idx, channel_idx, t_min=None, t_max=None, ax=None, alpha=1,
-                                 color=None):
-        """
+    ax.scatter(X[y == 0, 0], X[y == 0, 1],
+               c='r', s=40, alpha=1,
+               edgecolor='r', label='Class 1')  # edgecolor adds a border to the markers
+    ax.scatter(X[y == 1, 0], X[y == 1, 1],
+               c='b', s=40,
+               edgecolor='b', label='Class 2')
+    # Adding labels with larger font size
+    ax.set_xlabel('$X_1$', fontsize=AXIS_LABEL_FONTSIZE)
+    ax.set_ylabel('$X_2$', fontsize=AXIS_LABEL_FONTSIZE)
 
-        :param data:
-        :param trial_idx:
-        :param channel_idx:
-        :param t_min:
-        :param t_max:
-        :param ax:
-        :return:
-        """
-        # Convert time interval to sample indices
-        start_idx = np.argmin(np.abs(self.time - t_min)) if t_min is not None else 0
-        end_idx = np.argmin(np.abs(self.time - t_max)) if t_max is not None else len(self.time)
+    # Setting tick label sizes
+    ax.tick_params(axis='both', labelsize=TICKS_LABEL_FONTSIZE)
 
-        if ax is None:
-            fig, ax = plt.subplots(1, 1)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['left'].set_linewidth(1)
+    ax.spines['bottom'].set_linewidth(1)
 
-        ax.plot(self.time[start_idx:end_idx], data[trial_idx, channel_idx, start_idx:end_idx], alpha=alpha, color=color)
-        ax.set_xlabel("Time (second)")
-        ax.set_ylabel("Amplitude")
-        ax.set_title(self.channel_name[channel_idx] + ' Label = ' + self.label_name[self.label[trial_idx]])
+    # Optional: Add grid
+    ax.grid(True, linestyle='--', alpha=0.5)
 
-        return ax
+    # Optional: Set aspect ratio
+    x_range = ax.get_xlim()[1] - ax.get_xlim()[0]
+    y_range = ax.get_ylim()[1] - ax.get_ylim()[0]
 
-    def plot_sync_avg_with_ci(self, data, channel_idx, t_min=None, t_max=None, ci=0.95, ax=None):
-        """
-        Plot synchronous average of trials with confidence interval.
+    # Calculate the aspect ratio
+    # The figsize tuple contains the figure's width and height in inches.
+    # The aspect ratio should consider the figure's dimensions to scale the axes correctly.
+    # fig_aspect_ratio = fig.get_figwidth() / fig.get_figheight()
+    data_aspect_ratio = (x_range / y_range)  # * fig_aspect_ratio
+    ax.set_aspect(data_aspect_ratio, adjustable='box')
 
-        Parameters
-        ----------
-        :param data : numpy.ndarray
-            Data array of shape (num_trials, num_channels, num_samples).
-        :param channel_idx : int
-            Index of the channel to plot.
-        :param ci : float, optional
-            Confidence interval, default is 0.95.
-        :param ax: matplotlib.axes._subplots.AxesSubplot
-            Matplotlib ax, default is None
-        :param t_min:
-        :param t_max:
-        Returns
-        -------
-        ax : matplotlib.axes._subplots.AxesSubplot
-            The axis object containing the plot.
+    # Optional: Add legend
+    # If you have a legend to add, uncomment and modify the following line
+    ax.legend(fontsize=LEGEND_FONTSIZE)
+    plt.tight_layout()
+    if save_path is not None:
+        fig.savefig(save_path + "dataset.png")
+        fig.savefig(save_path + "dataset.svg")
 
-        """
-        start_idx = np.argmin(np.abs(self.time - t_min)) if t_min is not None else 0
-        end_idx = np.argmin(np.abs(self.time - t_max)) if t_max is not None else len(self.time)
-        # Get the data for the specified channel
-        channel_data = data[:, channel_idx, start_idx:end_idx]
 
-        # Calculate the synchronous average
-        sync_avg = np.mean(channel_data, axis=0)
+def plot_scatter_gplvm(X, labels, l1=0, l2=1, ax=None, colors=['r', 'b', 'g'], show_errorbars=True, std=None):
+    if ax is None:
+        plt.figure(figsize=(7, 8))
+        ax = plt.subplot(131)
 
-        # Calculate the standard error of the mean
-        sem = stats.sem(channel_data, axis=0)
-        # Calculate the confidence interval
-        h = sem * stats.t.ppf((1 + ci) / 2, len(channel_data) - 1)
+    # ax1.set_title('2D Latent Subspace Corresponding to 3 Phase Oilflow', fontsize=32)
+    ax.set_xlabel(f'Latent Dimension {l1 + 1}', fontsize=AXIS_LABEL_FONTSIZE)
+    ax.set_ylabel(f'Latent Dimension {l2 + 1}', fontsize=AXIS_LABEL_FONTSIZE)
+    ax.tick_params(axis='both', labelsize=TICKS_LABEL_FONTSIZE)
+    # Applying consistent spines format
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['left'].set_linewidth(1)
+    ax.spines['bottom'].set_linewidth(1)
+    # Applying consistent grid format
+    for i, label in enumerate(np.unique(labels)):
+        X_i = X[labels == label]
 
-        ci_low = sync_avg - h
-        ci_high = sync_avg + h
+        ax.scatter(X_i[:, l1], X_i[:, l2], c=colors[i], label=f'Class {label + 1}', s=40, edgecolor=colors[i], alpha=1)
+        if show_errorbars is True and std is not None:
+            scale_i = std[labels == label]
+            ax.errorbar(X_i[:, l1], X_i[:, l2], xerr=scale_i[:, l1], yerr=scale_i[:, l2], fmt='none', ecolor=colors[i],
+                        alpha=0.5, label=f'Confidence {label + 1}')
+    ax.legend(fontsize=LEGEND_FONTSIZE)
 
-        # Create the plot
-        if ax is None:
-            fig, ax = plt.subplots(1, 1)
-        ax.plot(self.time[start_idx:end_idx], sync_avg, color='black')
-        ax.fill_between(self.time[start_idx:end_idx], ci_low, ci_high, alpha=0.2)
 
-        # Set the axis labels and title
-        ax.set_xlabel('Time')
-        ax.set_ylabel('Amplitude')
-        ax.set_title(f'Synchronous Average (Channel {channel_idx} :' + self.channel_name[channel_idx] + ' )')
+def plot_ARD_gplvm(latent_dim, inverse_length_scale, ax=None):
+    if ax is None:
+        fig, ax = plt.subplots(132)
+    ax.bar(np.arange(latent_dim), height=inverse_length_scale.flatten())
+    ax.set_xlabel("ARD Coefficients", fontsize=AXIS_LABEL_FONTSIZE)
+    ax.set_ylabel("Value", fontsize=AXIS_LABEL_FONTSIZE)
+    # ax2.set_title('Inverse Lengthscale with SE-ARD Kernel', fontsize=32)
+    ax.tick_params(axis='both', labelsize=TICKS_LABEL_FONTSIZE)
+    # Applying consistent spines format
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['left'].set_linewidth(1)
+    ax.spines['bottom'].set_linewidth(1)
 
-        return ax
 
-    def plot_power_spectrum(self, data, channel_idx, trial_idx, t_min, t_max, ax=None, enable_plot=False, use_log=True):
-        """
-        Compute power spectrum for a given channel and trial index, and time interval between t_min and t_max.
-
-        Parameters:
-            data (ndarray): EEG data array of shape (num_trials, num_channels, num_samples).
-            channel_idx (int): Index of the channel of interest.
-            trial_idx (int): Index of the trial of interest.
-            t_min (float): Start time in seconds of the interval of interest.
-            t_max (float): End time in seconds of the interval of interest.
-            ax (matplotlib axe):
-
-        Returns:
-            f (ndarray): Frequency vector.
-            psd (ndarray): Power spectral density for the selected channel and trial.
-        """
-        # Get the index range for the time interval
-        t_start = np.argmin(np.abs(self.time - t_min))
-        t_end = np.argmin(np.abs(self.time - t_max))
-
-        # Get the EEG data for the selected channel and trial within the time interval
-        eeg_data = data[trial_idx, channel_idx, t_start:t_end]
-
-        # Compute the power spectral density using the Welch method with a Hann window
-        f, psd = signal.welch(eeg_data, fs=self.fs, window='hann', nperseg=1024, noverlap=512)
-
-        if enable_plot is True:
-            if ax is None:
-                fig, ax = plt.subplots(1, 1)
-            if use_log is True:
-                ax.plot(f, np.log(abs(psd)))
-                ax.set_xlabel("Frequency (Hz)")
-                ax.set_ylabel("Log(Power spectral density)")
-            else:
-                ax.plot(f, abs(psd))
-                ax.set_xlabel("Frequency (Hz)")
-                ax.set_ylabel("Log(Power spectral density)")
-            ax.set_title(self.channel_name[channel_idx] + ' Label = ' + self.label_name[self.label[trial_idx]])
-
-        return f, psd
-
-    def plot_average_power_spectrum(self, data, channel_idx, t_min, t_max, alpha=0.05, ax=None):
-        """
-        Compute and plot the average power spectrum over multiple trials with a confidence interval.
-
-        Parameters:
-            data (ndarray): EEG data array of shape (num_trials, num_channels, num_samples).
-            channel_idx (int): Index of the channel of interest.
-            t_min (float): Start time in seconds of the interval of interest.
-            t_max (float): End time in seconds of the interval of interest.
-            alpha (float): Significance level for the confidence interval. Default is 0.05.
-            ax (matplotlib axe):
-        """
-        # Compute the power spectral density for each trial
-        psd_all_trials = []
-        for trial_idx in range(data.shape[0]):
-            _, psd = self.plot_power_spectrum(data, channel_idx, trial_idx, t_min, t_max)
-            psd_all_trials.append(psd)
-
-        # Compute the average power spectral density and confidence interval
-        psd_all_trials = np.array(psd_all_trials)
-        psd_mean = np.mean(psd_all_trials, axis=0)
-        psd_std = np.std(psd_all_trials, axis=0, ddof=1)
-        t_value = stats.t.ppf(1 - alpha / 2, data.shape[0] - 1)
-        ci = t_value * psd_std / np.sqrt(data.shape[0])
-
-        # Plot the average power spectrum with confidence interval
-        f = _  # reusing frequency vector from previous function call
-        ax.plot(f, psd_mean, color='black')
-        ax.fill_between(f, psd_mean - ci, psd_mean + ci, color='gray', alpha=0.5)
-        ax.set_xlabel('Frequency (Hz)')
-        ax.set_ylabel('Power spectral density')
-
-        return ax
+def plot_loss_gplvm(losses, ax=None):
+    if ax is None:
+        fig, ax = plt.subplots(132)
+    ax.plot(losses[10:], label='batch_size=100')
+    ax.set_xlabel("Iteration", fontsize=AXIS_LABEL_FONTSIZE)
+    ax.set_ylabel("ELBO Loss", fontsize=AXIS_LABEL_FONTSIZE)
+    # ax.set_title('Neg. ELBO Loss', fontsize=32)
+    ax.tick_params(axis='both', labelsize=TICKS_LABEL_FONTSIZE)
+    ax.legend(fontsize=LEGEND_FONTSIZE)
+    # Applying consistent spines format
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['left'].set_linewidth(1)
+    ax.spines['bottom'].set_linewidth(1)
 
 
 def plot_results_gplvm(X, std, labels, losses, inverse_length_scale, latent_dim, largest=True, save_path=None,
@@ -192,51 +130,15 @@ def plot_results_gplvm(X, std, labels, losses, inverse_length_scale, latent_dim,
 
     # 2D Latent Subspace Plot
     ax1 = plt.subplot(131)
-    # ax1.set_title('2D Latent Subspace Corresponding to 3 Phase Oilflow', fontsize=32)
-    ax1.set_xlabel(f'Latent Dimension {l1+1}', fontsize=32)
-    ax1.set_ylabel(f'Latent Dimension {l2+1}', fontsize=32)
-    ax1.tick_params(axis='both', labelsize=28)
-    # Applying consistent spines format
-    ax1.spines['top'].set_visible(False)
-    ax1.spines['right'].set_visible(False)
-    ax1.spines['left'].set_linewidth(1)
-    ax1.spines['bottom'].set_linewidth(1)
-    # Applying consistent grid format
-    for i, label in enumerate(np.unique(labels)):
-        X_i = X[labels == label]
-        scale_i = std[labels == label]
-        ax1.scatter(X_i[:, l1], X_i[:, l2], c=colors[i], label=f'Class {label+1}', s=40, edgecolor=colors[i], alpha=1)
-        if show_errorbars is True:
-            ax1.errorbar(X_i[:, l1], X_i[:, l2], xerr=scale_i[:, l1], yerr=scale_i[:, l2], fmt='none', ecolor=colors[i],
-                         alpha=0.5, label=f'Confidence {label+1}')
-    ax1.legend(fontsize=24)
+    plot_scatter_gplvm(X, labels, l1=l1, l2=l2, ax=ax1, colors=['r', 'b', 'g'], show_errorbars=show_errorbars, std=std)
 
     # ARD Coefficients Plot
     ax2 = plt.subplot(132)
-    ax2.bar(np.arange(latent_dim), height=inverse_length_scale.flatten())
-    ax2.set_xlabel("ARD Coefficients", fontsize=32)
-    ax2.set_ylabel("Value", fontsize=32)
-    # ax2.set_title('Inverse Lengthscale with SE-ARD Kernel', fontsize=32)
-    ax2.tick_params(axis='both', labelsize=28)
-    # Applying consistent spines format
-    ax2.spines['top'].set_visible(False)
-    ax2.spines['right'].set_visible(False)
-    ax2.spines['left'].set_linewidth(1)
-    ax2.spines['bottom'].set_linewidth(1)
+    plot_ARD_gplvm(latent_dim, inverse_length_scale, ax=ax2)
 
     # Neg. ELBO Loss Plot
     ax3 = plt.subplot(133)
-    ax3.plot(losses[10:], label='batch_size=100')
-    ax3.set_xlabel("Iteration", fontsize=32)
-    ax3.set_ylabel("ELBO Loss", fontsize=32)
-    # ax3.set_title('Neg. ELBO Loss', fontsize=32)
-    ax3.tick_params(axis='both', labelsize=28)
-    ax3.legend(fontsize=24)
-    # Applying consistent spines format
-    ax3.spines['top'].set_visible(False)
-    ax3.spines['right'].set_visible(False)
-    ax3.spines['left'].set_linewidth(1)
-    ax3.spines['bottom'].set_linewidth(1)
+    plot_loss_gplvm(losses, ax=ax3)
 
     plt.tight_layout()
     if save_path is not None:
@@ -247,7 +149,7 @@ def plot_results_gplvm(X, std, labels, losses, inverse_length_scale, latent_dim,
 
 
 def plot_heatmap(x, labels, model, alpha, x_std=None, cmap='winter', range_scale=1.2, save_path=None,
-                 file_name='latent_heatmap', inducing_points=None, ind_point=0):
+                 file_name='latent_heatmap', inducing_points=None, ind_point=0, ax1=None, fig=None, show_plot=False):
     values, indices = torch.topk(torch.tensor(alpha), k=2, largest=True)
     l1 = indices.numpy().flatten()[0]
     l2 = indices.numpy().flatten()[1]
@@ -283,7 +185,8 @@ def plot_heatmap(x, labels, model, alpha, x_std=None, cmap='winter', range_scale
     prediction, predictions_probs = model.classify_x(X_grid)
     prob_matrix = predictions_probs[1, :].reshape(resolution, resolution)
 
-    fig, ax1 = plt.subplots(1, figsize=(8, 8))
+    if ax1 is None:
+        fig, ax1 = plt.subplots(1, figsize=(8, 8))
 
     data_aspect_ratio = (y_max - y_min) / (x_max - x_min)
 
@@ -343,11 +246,11 @@ def plot_heatmap(x, labels, model, alpha, x_std=None, cmap='winter', range_scale
     plt.tight_layout()
 
     # Display the plot
-    if save_path is None:
-        plt.show()
-    else:
+    if save_path is not None:
         fig.savefig(save_path + file_name + '.png')
         fig.savefig(save_path + file_name + '.svg')
+    if show_plot is True:
+        plt.show()
 
     return fig
 
