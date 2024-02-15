@@ -1,8 +1,9 @@
+from abc import ABC, abstractmethod
 from ..model.utils.variational import VariationalDist, VariationalLatentVariable, \
-    CholeskeyVariationalDist, SharedVariationalStrategy, VariationalLatentVariableNN
+    CholeskeyVariationalDist, SharedVariationalStrategy
 from ..visualization import plot_loss
 from ..model.utils.variational_strategy import VariationalStrategy2
-
+from ..utils import dicts_to_dict_of_lists
 import json
 import math
 import torch
@@ -11,11 +12,11 @@ import numpy as np
 import torch.nn as nn
 from torch import optim
 from sklearn.metrics import classification_report, accuracy_score, precision_score, recall_score, f1_score
+from gpytorch.variational import NNVariationalStrategy
 
 
-class FastLDGD(nn.Module):
+class AbstractLDGD(nn.Module, ABC):
     def __init__(self, y, kernel_reg, kernel_cls, likelihood_reg, likelihood_cls, latent_dim=2,
-                 num_inducing_points=10,
                  num_inducing_points_reg=10,
                  num_inducing_points_cls=10,
                  num_classes=3,
@@ -27,7 +28,7 @@ class FastLDGD(nn.Module):
                  reg_weight=1.0,
                  random_state=None,
                  device=None):
-        super(FastLDGD, self).__init__()
+        super(AbstractLDGD, self).__init__()
         if random_state is not None:
             torch.manual_seed(random_state)
 
@@ -62,12 +63,10 @@ class FastLDGD(nn.Module):
         self.jitter = 1e-4
 
         self.n = y.shape[0]
-        self.m = num_inducing_points
         self.m_reg = num_inducing_points_reg
         self.m_cls = num_inducing_points_cls
         self.d = y.shape[1]  # Number of featurea
         self.q = latent_dim  # Number of hidden space dimensions
-        self.log_noise_sigma = nn.Parameter(torch.ones(1, device=self.device) * -2)
         self.k = num_classes
         self.shared_inducing_points = shared_inducing_points
 
@@ -76,66 +75,35 @@ class FastLDGD(nn.Module):
 
         if inducing_points is None:
             if self.shared_inducing_points is True:
-                self.inducing_inputs_cls = nn.Parameter(torch.randn(self.m_cls, self.q))
-                self.inducing_inputs_reg = nn.Parameter(torch.randn(self.m_reg, self.q))
+                self.inducing_inputs_cls = torch.randn(self.m_cls, self.q, device=self.device)
+                self.inducing_inputs_reg = torch.randn(self.m_reg, self.q, device=self.device)
 
                 # Concatenate along the first dimension to form the final inducing_inputs
-                self.inducing_inputs = torch.cat((self.inducing_inputs_reg, self.inducing_inputs_cls), dim=0)
             else:
                 # self.inducing_inputs_cls = nn.Parameter(torch.randn(self.k, num_inducing_points, self.q))
                 # self.inducing_inputs_reg = nn.Parameter(torch.randn(self.d, num_inducing_points, self.q))
 
-                self.inducing_inputs_cls = torch.randn(num_inducing_points, self.q, device=self.device)
-                self.inducing_inputs_reg = torch.randn(num_inducing_points, self.q, device=self.device)
+                inducing_inputs_cls = torch.randn(self.m_cls, self.q, device=self.device)
+                inducing_inputs_reg = torch.randn(self.m_reg, self.q, device=self.device)
 
                 # Replicate inducing_inputs_cls k times and inducing_inputs_reg d times
-                cls_repeated = self.inducing_inputs_cls.repeat(self.k, 1, 1)
-                reg_repeated = self.inducing_inputs_reg.repeat(self.d, 1, 1)
+                self.inducing_inputs_cls = inducing_inputs_cls.repeat(self.k, 1, 1)
+                self.inducing_inputs_reg = inducing_inputs_reg.repeat(self.d, 1, 1)
 
-                self.inducing_inputs = torch.cat((cls_repeated, reg_repeated), dim=0)
-                self.m_reg = self.m
-                self.m_cls = self.m
             self.min_value = 0.001
         else:
             self.inducing_inputs = nn.Parameter(inducing_points)
             self.min_value = 0.001
 
         x_init = torch.randn(self.n, self.q)
-        if self.use_gpytorch is True:
-            x_prior_mean = torch.zeros(self.n, self.q, device=self.device)  # shape: N x Q
-            self.prior_x = gpytorch.priors.NormalPrior(x_prior_mean, torch.ones_like(x_prior_mean, device=self.device))
-            self.x = VariationalLatentVariableNN(self.n, self.d, self.q, x_init, self.prior_x)
+        self.prior_x = None
+        self.x = None
 
-            self.q_u_reg = gpytorch.variational.CholeskyVariationalDistribution(self.m_reg,
-                                                                                batch_shape=self.batch_shape_reg)
-            self.q_f_reg = gpytorch.variational.VariationalStrategy(model=self,
-                                                                    inducing_points=self.inducing_inputs_reg,
-                                                                    variational_distribution=self.q_u_reg,
-                                                                    learn_inducing_locations=True)
+        self.q_u_reg = None
+        self.q_f_reg = None
 
-            self.q_u_cls = gpytorch.variational.CholeskyVariationalDistribution(self.m_cls,
-                                                                                batch_shape=self.batch_shape_cls)
-            self.q_f_cls = gpytorch.variational.VariationalStrategy(model=self,
-                                                                    inducing_points=self.inducing_inputs_cls,
-                                                                    variational_distribution=self.q_u_cls,
-                                                                    learn_inducing_locations=True)
-        else:
-            self.prior_x = torch.distributions.Normal(torch.zeros(self.n, self.q, device=self.device),
-                                                      torch.ones(self.n, self.q, device=self.device))
-            self.x = VariationalLatentVariableNN(self.n, self.d, self.q, X_init=x_init, prior_x=self.prior_x)
-
-            self.q_u_reg = CholeskeyVariationalDist(num_inducing_points=self.m_reg, batch_shape=self.d)
-            self.q_u_cls = CholeskeyVariationalDist(num_inducing_points=self.m_cls, batch_shape=self.k)
-
-            self.q_f_cls = SharedVariationalStrategy(inducing_points=self.inducing_inputs_cls,
-                                                     variational_distribution=self.q_u_cls,
-                                                     jitter=self.jitter)
-
-            self.q_f_reg = SharedVariationalStrategy(inducing_points=self.inducing_inputs_reg,
-                                                     variational_distribution=self.q_u_reg,
-                                                     jitter=self.jitter)
-
-            self.log_noise_sigma = nn.Parameter(torch.ones(self.d, device=self.device) * -2)
+        self.q_u_cls = None
+        self.q_f_cls = None
 
         self.history_train = {
             'elbo_loss': [],
@@ -149,39 +117,69 @@ class FastLDGD(nn.Module):
 
         self.to(device=self.device)
 
-    @property
-    def noise_sigma(self):
-        return torch.nn.functional.softplus(self.log_noise_sigma)
-
-    def _get_batch_idx(self, batch_size, n_samples):
-        if n_samples < batch_size:
-            batch_size = n_samples
-        valid_indices = np.arange(n_samples)
-        batch_indices = np.random.choice(valid_indices, size=batch_size, replace=False)
-        return np.sort(batch_indices)
-
-    def _expand_inputs(self, x, inducing_points):
-        """
-        Pre-processing step in __call__ to make x the same batch_shape as the inducing points
-        """
-        batch_shape = torch.broadcast_shapes(inducing_points.shape[:-2], x.shape[:-2])
-        inducing_points = inducing_points.expand(*batch_shape, *inducing_points.shape[-2:])
-        x = x.expand(*batch_shape, *x.shape[-2:])
-        return x, inducing_points
-
+    @abstractmethod
     def sample_latent_variable(self, yn):
-        return self.x(yn)
+        pass
 
-    def compute_statistics(self):
-        x_samples = self.sample_latent_variable()
+    @abstractmethod
+    def forward(self, X, **kwargs):
+        pass
 
-        K_nn = self.kernel_reg(x_samples, x_samples)
-        K_nm = self.kernel_reg(x_samples, self.inducing_inputs_reg)
-        K_mn = K_nm.permute(0, 2, 1)
+    @abstractmethod
+    def train_model(self, yn, ys, learning_rate=0.01, epochs=100, batch_size=100, early_stop=None, show_plot=False):
+        pass
 
-        self.psi0 = K_nn.diagonal(dim1=1, dim2=2).mean(dim=0).sum()
-        self.psi1 = K_nm.mean(dim=0)
-        self.psi2 = (K_mn @ K_nm).mean(dim=0)
+    @abstractmethod
+    def predict_class(self, yn_test, learning_rate=0.01, epochs=100, batch_size=100, early_stop=None):
+        pass
+
+    def evaluate(self, yn_test, ys_test, learning_rate=0.01, epochs=100, save_path=None, early_stop=None):
+        predictions, history_test = self.predict_class(yn_test, learning_rate=learning_rate, epochs=epochs,
+                                                       early_stop=early_stop)
+        predictions = predictions.cpu()
+        report = classification_report(y_true=ys_test, y_pred=predictions)
+        print(report)
+        metrics = {
+            'accuracy': accuracy_score(ys_test, predictions),
+            'precision': precision_score(ys_test, predictions, average='weighted'),
+            'recall': recall_score(ys_test, predictions, average='weighted'),
+            'f1_score': f1_score(ys_test, predictions, average='weighted')
+        }
+        if save_path is not None:
+            # Save the report to a text file
+            with open(save_path + 'classification_report.txt', "w") as file:
+                file.write(report)
+
+            with open(save_path + 'classification_result.json', "w") as file:
+                json.dump(metrics, file, indent=2)
+
+        return predictions, metrics, history_test
+
+    def elbo(self, x_samples, x, yn, ys=None):
+        if self.use_gpytorch is True:
+            if ys is not None:
+                ell_cls, kl_u_cls = self.ell_cls_pytorch(x_samples=x_samples, ys=ys)
+            ell_reg, kl_u_reg = self.ell_reg_pytorch(x_samples=x_samples, yn=yn)
+
+        else:
+            if ys is not None:
+                ell_cls, kl_u_cls = self.ell_cls_scratch(x_samples=x_samples, ys=ys)
+            ell_reg, kl_u_reg = self.ell_reg_scratch(x_samples=x_samples, yn=yn)
+
+        if hasattr(x, 'kl_loss'):
+            kl_x = x.kl_loss  # x._added_loss_terms['x_kl'].loss()
+        else:
+            kl_x = x._added_loss_terms['x_kl'].loss()
+
+        loss_reg = ell_reg - kl_u_reg / kl_u_reg.shape[0]
+        if ys is not None:
+            loss_cls = ell_cls - kl_u_cls / kl_u_cls.shape[0]
+            elbo = loss_reg.sum() * self.reg_weight + loss_cls.sum() * self.cls_weight - kl_x
+            loss_dict = {'loss_reg': -loss_reg.sum().item(), 'loss_cls': -loss_cls.sum().item(), 'loss_kl': kl_x.item()}
+        else:
+            elbo = loss_reg.sum() * self.reg_weight - kl_x
+            loss_dict = {'loss_reg': -loss_reg.sum().item(), 'loss_kl': kl_x.item()}
+        return -elbo, loss_dict
 
     def ell_cls_scratch(self, x_samples, ys):
         batch_size = x_samples.shape[0]
@@ -254,7 +252,8 @@ class FastLDGD(nn.Module):
 
         x_samples, z = self._expand_inputs(x_samples, self.inducing_inputs_reg)
         if self.use_gpytorch_kernel is False:
-            k_nn_reg = self.kernel_reg(x_samples, x_samples) + torch.eye(batch_size, device=self.device).unsqueeze(0) * self.jitter
+            k_nn_reg = self.kernel_reg(x_samples, x_samples) + torch.eye(batch_size, device=self.device).unsqueeze(
+                0) * self.jitter
             k_mm_reg = self.kernel_reg(self.inducing_inputs_reg, self.inducing_inputs_reg)  # of size [D, M, M]
             k_mn_reg = self.kernel_reg(self.inducing_inputs_reg, x_samples)
         else:
@@ -306,61 +305,8 @@ class FastLDGD(nn.Module):
 
         return ell_reg, kl_u_reg
 
-    def elbo(self, x_samples, x, yn, ys=None):
-        if self.use_gpytorch is True:
-            if ys is not None:
-                ell_cls, kl_u_cls = self.ell_cls_pytorch(x_samples=x_samples, ys=ys)
-            ell_reg, kl_u_reg = self.ell_reg_pytorch(x_samples=x_samples, yn=yn)
-            kl_x = x.kl_loss #x._added_loss_terms['x_kl'].loss()
-        else:
-            if ys is not None:
-                ell_cls, kl_u_cls = self.ell_cls_scratch(x_samples=x_samples, ys=ys)
-            ell_reg, kl_u_reg = self.ell_reg_scratch(x_samples=x_samples, yn=yn)
-            kl_x = x.kl_loss
-
-        loss_reg = ell_reg - kl_u_reg / kl_u_reg.shape[0]
-        if ys is not None:
-            loss_cls = ell_cls - kl_u_cls / kl_u_cls.shape[0]
-            elbo = loss_reg.sum() * self.reg_weight + loss_cls.sum() * self.cls_weight - kl_x
-        else:
-            elbo = loss_reg.sum() * self.reg_weight - kl_x
-        return elbo
-
-    def expected_log_prob_reg(self, target, predictive_dist):
-        mean, variance = predictive_dist.mean.t(), predictive_dist.variance.t()
-        num_points, num_dims = mean.shape
-        # Potentially reshape the noise to deal with the multitask case
-        noise = self.noise_sigma
-
-        res = ((target - mean).square() + variance) / noise + noise.log() + math.log(2 * math.pi)
-        res = res.mul(-0.5)
-
-        return res.sum() / (num_points * num_dims)
-
-    def expected_log_prob_cls(self, target, predictive_dist):
-        mean, variance = predictive_dist.mean, predictive_dist.variance
-
-        noise = self._shaped_noise_covar(mean.shape).diagonal(dim1=-1, dim2=-2)
-        # Potentially reshape the noise to deal with the multitask case
-        noise = noise.view(*noise.shape[:-1], *input.event_shape)
-
-        res = ((target - mean).square() + variance) / noise + noise.log() + math.log(2 * math.pi)
-        res = res.mul(-0.5)
-
-        return res
-
-    def forward(self, X, **kwargs):
-        mode = kwargs.get('mode', 'reg')
-        mean_x = self.mean_module(X)
-        if mode == 'cls':
-            covar_x = self.kernel_cls(X, X).add_jitter(self.jitter)
-        else:
-            covar_x = self.kernel_reg(X, X).add_jitter(self.jitter)
-        dist = gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
-        return dist
-
-    def save_wights(self, path_save=''):
-        torch.save(self.state_dict(), path_save + 'model_parameters.pth')
+    def save_wights(self, path_save='', file_name='model_parameters'):
+        torch.save(self.state_dict(), path_save + f'{file_name}.pth')
 
     def load_weights(self, path_save='D:\\Navid\\Projects\\gp_project_pytorch\\', file_name='model_parameters.pth',
                      x_test=None):
@@ -373,56 +319,6 @@ class FastLDGD(nn.Module):
 
         self.load_state_dict(torch.load(path_save + file_name))
 
-    def train_model(self, yn, ys, learning_rate=0.01, epochs=100, batch_size=100, early_stop=None, show_plot=False):
-        optimizer = optim.Adam(self.parameters(), lr=learning_rate)
-        losses, x_mu_list, x_sigma_list, z_list_cls, z_list_reg = [], [], [], [], []
-        for epoch in range(epochs):
-            batch_index = self._get_batch_idx(batch_size, self.n)
-
-            optimizer.zero_grad()
-
-            yn_batch = yn[batch_index].to(self.device)
-            ys_batch = ys[batch_index].to(self.device)
-            sample_batch = self.sample_latent_variable(yn_batch)
-
-            # sample_batch = x[batch_index]
-            # sample_batch = sample_batch.to(self.device)
-
-            # Calculate loss
-            loss = -self.elbo(sample_batch, self.x, yn_batch, ys_batch)
-            losses.append(loss.item())
-
-            # Back propagate error
-            loss.backward()
-            optimizer.step()
-
-            if epoch % 10 == 0:
-
-                mse_loss = self.update_history_train(yn=yn, elbo_loss=loss.item())
-                print(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}, MSE: {mse_loss}")
-                if early_stop is not None:
-                    if len(losses) > 100:
-                        ce = np.abs(losses[-1] - np.mean(losses[-100:])) / np.abs(np.mean(losses[-100:]))
-                        if ce < early_stop:
-                            print("Early stop")
-                            break
-
-        if show_plot is True:
-            plot_loss(losses)
-
-        return losses, self.history_train
-
-    def predict_class(self, yn_test, learning_rate=0.01, epochs=100, batch_size=100, early_stop=None):
-        if yn_test.shape[1] != self.d:
-            raise ValueError(f"yn_test should be of size [num_test, {self.d}]")
-
-        self.history_test = None
-        self.n_test = yn_test.shape[0]
-
-        x_test_mu, x_test_logvar = self.x.encode(yn_test.to(self.device))
-        predictions, *_ = self.classify_x(x_test_mu)
-        return predictions, self.history_test
-
     def classify_x(self, x):
         if self.use_gpytorch is True:
             x_test_sampled = x
@@ -432,24 +328,25 @@ class FastLDGD(nn.Module):
 
             x_test_sampled = x_test_sampled.to(self.device)
             predictive_dist_cls = self.q_f_cls(x=x_test_sampled, mode='cls')
-
+            predictions = self.likelihood_cls(predictive_dist_cls.mean).mean.argmax(dim=0)
             predictions_probs = self.likelihood_cls(predictive_dist_cls.mean).mean.cpu().detach().numpy()
-            predictions = predictions_probs.argmax(axis=0)
         else:
             batch_size = 500
             predictions, predictions_probs = [], []
             for i in range(0, x.shape[0], batch_size):
                 new_batch_size = np.min([i + batch_size, x.shape[0]]) - i
-                x_test_sampled = x[i:np.min([i + batch_size, x.shape[0]])].to(self.device)
+                x_test_sampled = x[i:np.min([i + batch_size, x.shape[0]])]
                 x_samples, z = self._expand_inputs(x_test_sampled, self.inducing_inputs_cls)
                 if self.use_gpytorch_kernel is False:
                     k_nn_cls = self.kernel_cls(x_samples, x_samples) + \
-                               torch.eye(new_batch_size, device=self.device).unsqueeze(0) * self.jitter  # of size [D, N, N]
+                               torch.eye(new_batch_size, device=self.device).unsqueeze(
+                                   0) * self.jitter  # of size [D, N, N]
                     k_mm_cls = self.kernel_cls(self.inducing_inputs_cls, self.inducing_inputs_cls)  # of size [D, M, M]
                     k_mn_cls = self.kernel_cls(self.inducing_inputs_cls, x_samples)
                 else:
                     k_nn_cls = self.kernel_cls(x_samples, x_samples).evaluate() + \
-                               torch.eye(new_batch_size, device=self.device).unsqueeze(0) * self.jitter  # of size [D, N, N]
+                               torch.eye(new_batch_size, device=self.device).unsqueeze(
+                                   0) * self.jitter  # of size [D, N, N]
                     k_mm_cls = self.kernel_cls(self.inducing_inputs_cls, self.inducing_inputs_cls).evaluate()
                     k_mn_cls = self.kernel_cls(self.inducing_inputs_cls, x_samples).evaluate()
 
@@ -459,9 +356,8 @@ class FastLDGD(nn.Module):
                                                                            k_mn_cls,
                                                                            variational_mean=self.q_u_cls.mu,
                                                                            variational_cov=self.q_u_cls.sigma)
-                probs = self.likelihood_cls(predictive_dist_cls.mean).mean.cpu().detach().numpy()
-                predictions_probs.append(probs)
-                predictions.append(probs.argmax(axis=0))
+                predictions_probs.append(self.likelihood_cls(predictive_dist_cls.mean).mean.detach().numpy())
+                predictions.append(self.likelihood_cls(predictive_dist_cls.mean).mean.argmax(dim=0))
             predictions = np.concatenate(predictions, axis=0)
             predictions_probs = np.concatenate(predictions_probs, axis=1)
         return predictions, predictions_probs
@@ -488,13 +384,15 @@ class FastLDGD(nn.Module):
                 x_samples, z = self._expand_inputs(x_test_sampled, self.inducing_inputs_reg)
                 if self.use_gpytorch_kernel is False:
                     k_nn_reg = self.kernel_reg(x_samples, x_samples) + \
-                               torch.eye(new_batch_size, device=self.device).unsqueeze(0) * self.jitter  # of size [D, N, N]
+                               torch.eye(new_batch_size, device=self.device).unsqueeze(
+                                   0) * self.jitter  # of size [D, N, N]
                     k_mm_reg = self.kernel_reg(self.inducing_inputs_reg,
                                                self.inducing_inputs_reg)  # of size [D, M, M]
                     k_mn_reg = self.kernel_reg(self.inducing_inputs_reg, x_samples)
                 else:
                     k_nn_reg = self.kernel_reg(x_samples, x_samples).evaluate() + \
-                               torch.eye(new_batch_size, device=self.device).unsqueeze(0) * self.jitter  # of size [D, N, N]
+                               torch.eye(new_batch_size, device=self.device).unsqueeze(
+                                   0) * self.jitter  # of size [D, N, N]
                     k_mm_reg = self.kernel_reg(self.inducing_inputs_reg,
                                                self.inducing_inputs_reg).evaluate()  # of size [D, M, M]
                     k_mn_reg = self.kernel_reg(self.inducing_inputs_reg, x_samples).evaluate()
@@ -511,44 +409,21 @@ class FastLDGD(nn.Module):
             predictions_std = torch.concat(predictions_std, axis=1)
         return predictions_mean, predictions_std
 
-    def evaluate(self, yn_test, ys_test, learning_rate=0.01, epochs=100, save_path=None, early_stop=None):
-        predictions, history_test = self.predict_class(yn_test, learning_rate=learning_rate, epochs=epochs,
-                                                       early_stop=early_stop)
-        report = classification_report(y_true=ys_test, y_pred=predictions)
-        print(report)
-        metrics = {
-            'accuracy': accuracy_score(ys_test, predictions),
-            'precision': precision_score(ys_test, predictions, average='weighted'),
-            'recall': recall_score(ys_test, predictions, average='weighted'),
-            'f1_score': f1_score(ys_test, predictions, average='weighted')
-        }
-        if save_path is not None:
-            # Save the report to a text file
-            with open(save_path + 'classification_report.txt', "w") as file:
-                file.write(report)
-
-            with open(save_path + 'classification_result.json', "w") as file:
-                json.dump(metrics, file, indent=2)
-
-        return predictions, metrics, history_test
-
     def update_history_train(self, yn, elbo_loss):
 
         if self.use_gpytorch is False:
-            x_mu, x_sigma = self.x.encode(yn.to(self.device))
-            x_mu = x_mu.cpu().detach().numpy()
-            x_sigma = x_sigma.cpu().detach().numpy()
-            #x_mu = self.x.q_mu.cpu().detach().numpy()
-            #x_sigma = torch.nn.functional.softplus(self.x.q_log_sigma.cpu()).detach().numpy()
+            x_mu = self.x.q_mu.cpu().detach().numpy()
+            x_sigma = self.x.q_sigma.cpu().detach().numpy()
+            # x_mu = self.x.q_mu.cpu().detach().numpy()
+            # x_sigma = torch.nn.functional.softplus(self.x.q_log_sigma.cpu()).detach().numpy()
             self.history_train['elbo_loss'].append(elbo_loss)
             self.history_train['x_mu_list'].append(x_mu.copy())
             self.history_train['x_sigma_list'].append(x_sigma.copy())
             self.history_train['z_list_cls'].append(self.inducing_inputs_cls.cpu().detach().numpy().copy())
             self.history_train['z_list_reg'].append(self.inducing_inputs_reg.cpu().detach().numpy().copy())
         else:
-            x_mu, x_sigma = self.x.encode(yn.to(self.device))
-            x_mu = x_mu.cpu().detach().numpy()
-            x_sigma = x_sigma.cpu().detach().numpy()
+            x_mu = self.x.q_mu.cpu().detach().numpy()
+            x_sigma = torch.nn.functional.softplus(self.x.q_log_sigma.cpu()).detach().numpy()
             self.history_train['x_mu_list'].append(x_mu.copy())
             self.history_train['x_sigma_list'].append(x_sigma.copy())
             self.history_train['z_list_cls'].append(self.q_f_cls.inducing_points.cpu().detach().numpy().copy())
@@ -579,3 +454,53 @@ class FastLDGD(nn.Module):
         mse_loss = np.mean(np.square(yn_test.cpu().detach().numpy() - predicted_yn.cpu().detach().numpy()))
         self.history_test['mse_loss'].append(mse_loss)
         return mse_loss
+
+    def _get_batch_idx(self, batch_size, n_samples):
+        if n_samples < batch_size:
+            batch_size = n_samples
+        valid_indices = np.arange(n_samples)
+        batch_indices = np.random.choice(valid_indices, size=batch_size, replace=False)
+        return np.sort(batch_indices)
+
+    def _expand_inputs(self, x, inducing_points):
+        """
+        Pre-processing step in __call__ to make x the same batch_shape as the inducing points
+        """
+        batch_shape = torch.broadcast_shapes(inducing_points.shape[:-2], x.shape[:-2])
+        inducing_points = inducing_points.expand(*batch_shape, *inducing_points.shape[-2:])
+        x = x.expand(*batch_shape, *x.shape[-2:])
+        return x, inducing_points
+
+    def compute_statistics(self):
+        x_samples = self.sample_latent_variable()
+
+        K_nn = self.kernel_reg(x_samples, x_samples)
+        K_nm = self.kernel_reg(x_samples, self.inducing_inputs_reg)
+        K_mn = K_nm.permute(0, 2, 1)
+
+        self.psi0 = K_nn.diagonal(dim1=1, dim2=2).mean(dim=0).sum()
+        self.psi1 = K_nm.mean(dim=0)
+        self.psi2 = (K_mn @ K_nm).mean(dim=0)
+
+    def expected_log_prob_reg(self, target, predictive_dist):
+        mean, variance = predictive_dist.mean.t(), predictive_dist.variance.t()
+        num_points, num_dims = mean.shape
+        # Potentially reshape the noise to deal with the multitask case
+        noise = self.noise_sigma
+
+        res = ((target - mean).square() + variance) / noise + noise.log() + math.log(2 * math.pi)
+        res = res.mul(-0.5)
+
+        return res.sum() / (num_points * num_dims)
+
+    def expected_log_prob_cls(self, target, predictive_dist):
+        mean, variance = predictive_dist.mean, predictive_dist.variance
+
+        noise = self._shaped_noise_covar(mean.shape).diagonal(dim1=-1, dim2=-2)
+        # Potentially reshape the noise to deal with the multitask case
+        noise = noise.view(*noise.shape[:-1], *input.event_shape)
+
+        res = ((target - mean).square() + variance) / noise + noise.log() + math.log(2 * math.pi)
+        res = res.mul(-0.5)
+
+        return res

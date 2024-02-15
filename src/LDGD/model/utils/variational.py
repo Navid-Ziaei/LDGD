@@ -41,9 +41,7 @@ class VariationalLatentVariable(nn.Module):
         if device is not None:
             self.device = device
         else:
-            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-
+            self.device = torch.device("cpu")
         self.to(device=self.device)
 
     @property
@@ -87,18 +85,19 @@ class VariationalLatentVariableNN(nn.Module):
         self.n = n
         self.data_dim = data_dim
 
-        hidden_dim = 50
+        hidden_dim1 = 50
+        hidden_dim2 = 20
 
         self.encoder = nn.Sequential(
-            nn.Linear(data_dim, hidden_dim),
-            nn.LeakyReLU(0.2),
-            nn.Linear(hidden_dim, 10),
-            nn.LeakyReLU(0.2)
+            nn.Linear(data_dim, hidden_dim1),
+            nn.ReLU(),
+            nn.Linear(hidden_dim1, hidden_dim2),
+            nn.ReLU()
         ).to(self.device)
 
         # latent mean and variance
-        self.mean_layer = nn.Linear(10, latent_dim)
-        self.logvar_layer = nn.Linear(10, latent_dim)
+        self.mean_layer = nn.Linear(hidden_dim2, latent_dim)
+        self.logvar_layer = nn.Linear(hidden_dim2, latent_dim)
 
         # Local variational params per latent point with dimensionality latent_dim
         self.kl_loss = None

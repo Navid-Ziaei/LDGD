@@ -467,14 +467,27 @@ def plot_channel_combination_accuracy(mean_accuracy, save_path=None, file_name=N
 
 
 def plot_loss(losses):
-    # Plot the optimization process
-    plt.figure(figsize=(10, 6))
-    plt.plot(losses)
-    plt.xlabel('Iteration')
-    plt.ylabel('Negative Log-Marginal Likelihood')
-    plt.title('Optimization of Negative Log-Marginal Likelihood')
-    plt.grid(True)
-    plt.show()
+    if isinstance(losses, dict):
+        keys = list(losses.keys())
+        n_keys = len(keys)
+
+        fig, axs = plt.subplots(n_keys, 1, figsize=(10, n_keys * 3))  # Adjust size as needed
+
+        for i, key in enumerate(keys):
+            axs[i].plot(losses[key])
+            axs[i].set_title(key)
+
+        plt.tight_layout()
+        plt.show()
+    else:
+        # Plot the optimization process
+        plt.figure(figsize=(10, 6))
+        plt.plot(losses)
+        plt.xlabel('Iteration')
+        plt.ylabel('Negative Log-Marginal Likelihood')
+        plt.title('Optimization of Negative Log-Marginal Likelihood')
+        plt.grid(True)
+        plt.show()
 
 
 def plot_result_through_time(time_features, time_idx, mean_accuracy_list_through_time, std_accuracy_list_through_time,

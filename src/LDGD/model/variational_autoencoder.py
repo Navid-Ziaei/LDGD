@@ -72,7 +72,8 @@ class VAE(nn.Module):
 
         return reconstruction_loss, classification_loss, KLD
 
-    def fit(self, x, y, x_test, y_test, optimizer, epochs, batch_size=100):
+    def fit(self, x, y, x_test, y_test, optimizer, epochs, batch_size=100, patience=10):
+        best_loss = np.inf
         self.train()
         # Convert the input data to a TensorDataset and DataLoader for batch processing
         dataset = TensorDataset(x, y)
@@ -121,15 +122,40 @@ class VAE(nn.Module):
                 optimizer.step()
 
             # Print average loss for the epoch
-            _, _, _, metrics_train = self.evaluate(x, y)
-            _, _, _, metrics_test = self.evaluate(x_test, y_test)
+            _, _, _, _, metrics_train = self.evaluate(x, y)
+            x_hat, y_hat, mean, log_var, metrics_test = self.evaluate(x_test, y_test)
+            # Calculate the loss for the current batch
+            reconstruction_loss, classification_loss, KLD = self.loss_function(x_test.to(self.device),
+                                                                               y_test.to(self.device),
+                                                                               torch.Tensor(x_hat).to(self.device),
+                                                                               torch.Tensor(y_hat).to(self.device),
+                                                                               torch.Tensor(mean).to(self.device),
+                                                                               torch.Tensor(log_var).to(self.device))
+            validation_loss = reconstruction_loss + classification_loss + KLD
+            history['loss'].append(validation_loss.item())  # Assuming you want to track validation loss in history
+
+
             print(f"\tEpoch {epoch + 1}: \t"
                   f"Average Loss:  {overall_loss / (n_batches * batch_size)}"
-                  f"\t REC Loss:  {overall_loss_rec / (n_batches * batch_size)}"
-                  f"\t CLS Loss:  {overall_loss_cls / (n_batches * batch_size)}"
-                  f"\t KL Loss:  {overall_loss_kl / (n_batches * batch_size)}"
+                  #f"\t REC Loss:  {overall_loss_rec / (n_batches * batch_size)}"
+                  #f"\t CLS Loss:  {overall_loss_cls / (n_batches * batch_size)}"
+                  #f"\t KL Loss:  {overall_loss_kl / (n_batches * batch_size)}"
                   f"\t ACC train:  {metrics_train['accuracy']}"
                   f"\t ACC test:  {metrics_test['accuracy']}")
+
+
+
+            # Check for improvement
+            if validation_loss < best_loss:
+                best_loss = validation_loss
+                patience_counter = 0  # Reset patience counter
+            else:
+                patience_counter += 1  # Increment patience counter
+
+            if patience_counter >= patience:
+                print(f"Stopping early at epoch {epoch + 1}. No improvement in validation loss for {patience} epochs.")
+                break
+            validation_loss = 0
 
         return history
 
@@ -169,9 +195,9 @@ class VAE(nn.Module):
             'f1_score': f1_score(y_test, predicet_label, average='weighted', zero_division=1)
         }
         if save_path is not None:
-            report = classification_report(y_true=y_test, y_pred=predicet_label, zero_division=0)
+            report = classification_report(y_true=y_test, y_pred=predicet_label, zero_division=1)
             # Save the report to a text file
             with open(save_path + 'classification_report_autoencoder.txt', "w") as file:
                 file.write(report)
 
-        return y_hat, mean, log_var, metrics
+        return x_hat, y_hat, mean, log_var, metrics

@@ -4,7 +4,7 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 from torchvision.datasets import MNIST
 import torchvision.transforms as transforms
-from LDGD.model.Autoencoder import VAE
+from LDGD.model.variational_autoencoder import VAE
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
