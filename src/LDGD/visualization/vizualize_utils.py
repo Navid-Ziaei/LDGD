@@ -61,7 +61,7 @@ def plot_2d_scatter(X, y, save_path=None, ax=None, fig=None):
         fig.savefig(save_path + "dataset.svg")
 
 
-def plot_scatter_gplvm(X, labels, l1=0, l2=1, ax=None, colors=['r', 'b', 'g'], show_errorbars=True, std=None):
+def plot_scatter_gplvm(X, labels, l1=0, l2=1, ax=None, colors=['r', 'b', 'g'], show_errorbars=True, std=None, show_legend=False):
     if ax is None:
         plt.figure(figsize=(7, 8))
         ax = plt.subplot(131)
@@ -84,7 +84,8 @@ def plot_scatter_gplvm(X, labels, l1=0, l2=1, ax=None, colors=['r', 'b', 'g'], s
             scale_i = std[labels == label]
             ax.errorbar(X_i[:, l1], X_i[:, l2], xerr=scale_i[:, l1], yerr=scale_i[:, l2], fmt='none', ecolor=colors[i],
                         alpha=0.5, label=f'Confidence {label + 1}')
-    ax.legend(fontsize=LEGEND_FONTSIZE)
+    if show_legend is True:
+        ax.legend(fontsize=LEGEND_FONTSIZE)
 
 
 def plot_ARD_gplvm(latent_dim, inverse_length_scale, ax=None):
@@ -202,9 +203,9 @@ def plot_heatmap(x, labels, model, alpha, x_std=None, cmap='winter', range_scale
     cbar.ax.tick_params(labelsize=20)  # Set the colorbar tick label fontsize
 
     # Extracting the relevant dimensions from x_mu_list_test
-    color_list = ['black', 'white', 'y']
-    label_list = ['class1', 'class2', 'class3']
-    labels_name = [f'class{i}' for i in labels]
+    color_list = ['black', 'white', 'r', 'b', 'g', 'c', 'm', 'y', 'k', 'lime', 'navy', 'teal']
+    # label_list = ['class1', 'class2', 'class3']
+    label_list = [f'class{i+1}' for i in labels]
     for idx, label in enumerate(np.unique(labels)):
         ax1.scatter(x[labels == label, l1], x[labels == label, l2], c=color_list[idx], label=label_list[idx])
         if x_std is not None:
