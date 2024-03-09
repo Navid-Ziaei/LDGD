@@ -9,6 +9,7 @@ import pandas as pd
 import GPy
 import torch
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 seaborn.set(style="white", color_codes=True)
 AXIS_LABEL_FONTSIZE = 32
@@ -16,19 +17,19 @@ TICKS_LABEL_FONTSIZE = 28
 LEGEND_FONTSIZE = 24
 
 
-def plot_2d_scatter(X, y, save_path=None, ax=None, fig=None):
+def plot_2d_scatter(X, y, save_path=None, ax=None, fig=None, idx1=0, idx2=1):
     if ax is None:
         fig, ax = plt.subplots(1, figsize=(12, 8))
 
-    ax.scatter(X[y == 0, 0], X[y == 0, 1],
+    ax.scatter(X[y == 0, idx1], X[y == 0, idx2],
                c='r', s=40, alpha=1,
                edgecolor='r', label='Class 1')  # edgecolor adds a border to the markers
-    ax.scatter(X[y == 1, 0], X[y == 1, 1],
+    ax.scatter(X[y == 1, idx1], X[y == 1, idx2],
                c='b', s=40,
                edgecolor='b', label='Class 2')
     # Adding labels with larger font size
-    ax.set_xlabel('$X_1$', fontsize=AXIS_LABEL_FONTSIZE)
-    ax.set_ylabel('$X_2$', fontsize=AXIS_LABEL_FONTSIZE)
+    ax.set_xlabel(f'X{idx1 + 1}', fontsize=AXIS_LABEL_FONTSIZE)
+    ax.set_ylabel(f'X{idx2 + 1}', fontsize=AXIS_LABEL_FONTSIZE)
 
     # Setting tick label sizes
     ax.tick_params(axis='both', labelsize=TICKS_LABEL_FONTSIZE)
@@ -61,10 +62,11 @@ def plot_2d_scatter(X, y, save_path=None, ax=None, fig=None):
         fig.savefig(save_path + "dataset.svg")
 
 
-def plot_scatter_gplvm(X, labels, l1=0, l2=1, ax=None, colors=['r', 'b', 'g'], show_errorbars=True, std=None, show_legend=False):
+def plot_scatter_gplvm(X, labels, l1=0, l2=1, ax=None, colors=['r', 'b', 'g'], show_errorbars=True, std=None,
+                       show_legend=False, marker='o', markersize=40):
     if ax is None:
         plt.figure(figsize=(7, 8))
-        ax = plt.subplot(131)
+        ax = plt.subplot(111)
 
     # ax1.set_title('2D Latent Subspace Corresponding to 3 Phase Oilflow', fontsize=32)
     ax.set_xlabel(f'Latent Dimension {l1 + 1}', fontsize=AXIS_LABEL_FONTSIZE)
@@ -73,29 +75,48 @@ def plot_scatter_gplvm(X, labels, l1=0, l2=1, ax=None, colors=['r', 'b', 'g'], s
     # Applying consistent spines format
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
-    ax.spines['left'].set_linewidth(1)
-    ax.spines['bottom'].set_linewidth(1)
+    ax.spines['left'].set_linewidth(2)
+    ax.spines['bottom'].set_linewidth(2)
     # Applying consistent grid format
-    for i, label in enumerate(np.unique(labels)):
-        X_i = X[labels == label]
+    if len(np.unique(labels)) < 4:
+        for i, label in enumerate(np.unique(labels)):
+            X_i = X[labels == label]
+            points_color = colors[i]
+            ax.scatter(X_i[:, l1], X_i[:, l2], c=points_color, label=f'Class {label + 1}', s=markersize,
+                       edgecolor=colors[i],
+                       alpha=1, marker=marker)
 
-        ax.scatter(X_i[:, l1], X_i[:, l2], c=colors[i], label=f'Class {label + 1}', s=40, edgecolor=colors[i], alpha=1)
-        if show_errorbars is True and std is not None:
-            scale_i = std[labels == label]
-            ax.errorbar(X_i[:, l1], X_i[:, l2], xerr=scale_i[:, l1], yerr=scale_i[:, l2], fmt='none', ecolor=colors[i],
-                        alpha=0.5, label=f'Confidence {label + 1}')
+            if show_errorbars is True and std is not None:
+                scale_i = std[labels == label]
+                ax.errorbar(X_i[:, l1], X_i[:, l2], xerr=scale_i[:, l1], yerr=scale_i[:, l2], fmt='none',
+                            ecolor=colors[i],
+                            alpha=0.5, label=f'Confidence {label + 1}')
+    else:
+        norm_labels = labels / labels.max()
+        scatter = ax.scatter(X[:, l1], X[:, l2],
+                             c=norm_labels,
+                             s=40,
+                             alpha=0.5,
+                             edgecolors='none', cmap='hsv')
+        plt.colorbar(scatter, ax=ax)
+
     if show_legend is True:
         ax.legend(fontsize=LEGEND_FONTSIZE)
 
 
 def plot_ARD_gplvm(latent_dim, inverse_length_scale, ax=None):
     if ax is None:
-        fig, ax = plt.subplots(132)
-    ax.bar(np.arange(latent_dim), height=inverse_length_scale.flatten())
-    ax.set_xlabel("ARD Coefficients", fontsize=AXIS_LABEL_FONTSIZE)
-    ax.set_ylabel("Value", fontsize=AXIS_LABEL_FONTSIZE)
-    # ax2.set_title('Inverse Lengthscale with SE-ARD Kernel', fontsize=32)
-    ax.tick_params(axis='both', labelsize=TICKS_LABEL_FONTSIZE)
+        fig, ax = plt.subplots(figsize=(12, 4))  # Adjusted to create only one subplot
+    # Plotting the bar chart
+    ax.bar(np.arange(1, latent_dim + 1), height=inverse_length_scale.flatten())
+    # Setting x-axis labels and title
+    ax.set_xlabel("ARD Coefficients", fontsize=AXIS_LABEL_FONTSIZE)  # Adjusted for example
+    ax.set_ylabel("Value", fontsize=AXIS_LABEL_FONTSIZE)  # Adjusted for example
+    # Setting tick labels (starting from 1 to latent_dim)
+    ax.set_xticks(np.arange(1, latent_dim + 1))
+    ax.set_xticklabels(np.arange(1, latent_dim + 1).astype(str))
+    # Customizing tick parameters
+    ax.tick_params(axis='both', labelsize=TICKS_LABEL_FONTSIZE)  # Adjusted for example
     # Applying consistent spines format
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
@@ -120,7 +141,7 @@ def plot_loss_gplvm(losses, ax=None):
 
 
 def plot_results_gplvm(X, std, labels, losses, inverse_length_scale, latent_dim, largest=True, save_path=None,
-                       file_name='gplvm_result', show_errorbars=True):
+                       file_name='gplvm_result', show_errorbars=True, Z=None):
     values, indices = torch.topk(torch.tensor(inverse_length_scale), k=2, largest=largest)
     l1 = indices.numpy().flatten()[0]
     l2 = indices.numpy().flatten()[1]
@@ -132,6 +153,10 @@ def plot_results_gplvm(X, std, labels, losses, inverse_length_scale, latent_dim,
     # 2D Latent Subspace Plot
     ax1 = plt.subplot(131)
     plot_scatter_gplvm(X, labels, l1=l1, l2=l2, ax=ax1, colors=['r', 'b', 'g'], show_errorbars=show_errorbars, std=std)
+    if Z is not None:
+        z_reg, z_cls = Z
+        plot_scatter_gplvm(z_reg, np.zeros(z_reg.shape[0], ), l1=l1, l2=l2, ax=ax1, colors=['g'], marker='X', markersize=70)
+        plot_scatter_gplvm(z_cls, np.zeros(z_reg.shape[0], ), l1=l1, l2=l2, ax=ax1, colors=['purple'], marker='X', markersize=70)
 
     # ARD Coefficients Plot
     ax2 = plt.subplot(132)
@@ -149,8 +174,77 @@ def plot_results_gplvm(X, std, labels, losses, inverse_length_scale, latent_dim,
         plt.show()
 
 
+def plot_box_plots(data, labels, save_path=None, file_name='box_plot', new_point_values=None, new_point_label=None,
+                   marker='x', marker_size=30):
+    data_long = pd.DataFrame()
+    unique_labels = np.unique(labels)  # Get all unique labels/classes
+    class_labels = [f'Class {int(label)}' for label in sorted(unique_labels)]
+
+    for i in range(data.shape[-1]):  # Loop over each dimension
+        # Extract data for current dimension
+        dim_data = data[:, i]
+        # Append to the DataFrame
+        temp_df = pd.DataFrame({
+            'Dimension': np.repeat(f'Dim {i + 1}', data.shape[0]),  # Dimension label
+            'Value': dim_data,  # Dimension values
+            'Class': [f'Class {int(label)}' for label in labels]  # Class labels for each data point
+        })
+        data_long = pd.concat([data_long, temp_df])
+
+    # Box Plot
+    plt.figure(figsize=(30, 8))  # Adjust the figure size as necessary
+
+    # Set the aesthetic style of the plots
+    sns.set_style("whitegrid")
+    sns.set_context("talk", font_scale=0.8)  # Adjust for paper
+
+    # Create a dynamic color palette for the classes
+    palette = sns.color_palette("hsv", len(unique_labels))
+    palette = ['r', 'b', 'g']
+    class_order = class_labels
+
+    # Boxplot for the background statistics
+    sns.boxplot(x='Dimension', y='Value', hue='Class', data=data_long,
+                palette=palette, showfliers=False, saturation=1, hue_order=class_order)
+
+    # Swarmplot for the scatter of points, replaced with stripplot for better control over markers
+    sns.stripplot(x='Dimension', y='Value', hue='Class', data=data_long, dodge=True, palette=palette, jitter=True,
+                  marker='d', edgecolor='gray', linewidth=0.5, alpha=0.7, hue_order=class_order)
+
+    if new_point_values is not None:
+        new_data_df = pd.DataFrame()
+        for i in range(new_point_values.shape[-1]):
+            dim_data = new_point_values[:, i]
+            new_df = pd.DataFrame({
+                'Dimension': np.repeat(f'Dim {i + 1}', new_point_values.shape[0]),  # Dimension label
+                'Value': dim_data,  # Dimension values
+                'Class': [f'Class {int(label)}' for label in new_point_label]  # Class labels for each data point
+            })
+            new_data_df = pd.concat([new_data_df, new_df])
+        sns.stripplot(x='Dimension', y='Value', hue='Class', data=new_data_df, palette=palette,
+                      dodge=True, color='black', jitter=False, marker=marker, size=marker_size, edgecolor='black',
+                      linewidth=2,
+                      alpha=1, hue_order=class_order)
+
+    # plt.title('Distribution of Values Across Dimensions by Class', fontsize=AXIS_LABEL_FONTSIZE)
+    plt.xlabel('Dimension', fontsize=AXIS_LABEL_FONTSIZE)
+    plt.ylabel('Value', fontsize=AXIS_LABEL_FONTSIZE)
+    plt.xticks(rotation=0, fontsize=TICKS_LABEL_FONTSIZE)
+    plt.yticks(fontsize=TICKS_LABEL_FONTSIZE)
+    """plt.legend(title='Class', title_fontsize=LEGEND_FONTSIZE, fontsize=LEGEND_FONTSIZE, bbox_to_anchor=(1.05, 1),
+               loc='upper left')"""
+    plt.legend([], [], frameon=False)
+
+    plt.tight_layout()
+    if save_path is not None:
+        plt.savefig(f"{save_path}/{file_name}.png")
+    else:
+        plt.show()  # Ensure plot is shown even when saved
+
+
 def plot_heatmap(x, labels, model, alpha, x_std=None, cmap='winter', range_scale=1.2, save_path=None,
-                 file_name='latent_heatmap', inducing_points=None, ind_point=0, ax1=None, fig=None, show_plot=False):
+                 file_name='latent_heatmap', inducing_points=None, ind_point=0, ax1=None, fig=None,
+                 show_plot=False, heat_map_mode='prob', show_legend=False, device='cpu'):
     values, indices = torch.topk(torch.tensor(alpha), k=2, largest=True)
     l1 = indices.numpy().flatten()[0]
     l2 = indices.numpy().flatten()[1]
@@ -183,7 +277,13 @@ def plot_heatmap(x, labels, model, alpha, x_std=None, cmap='winter', range_scale
     X_grid[:, l1] = xx.ravel()
     X_grid[:, l2] = yy.ravel()
 
-    prediction, predictions_probs = model.classify_x(X_grid)
+    prediction_arr, predictions_probs, predictions_var = model.classify_x(X_grid.to(device))
+    std_matrix = np.zeros_like(prediction_arr, 'float32')
+    for idx, var in enumerate(predictions_var):
+        selected_var = var[prediction_arr == idx]
+        std_matrix[prediction_arr == idx] = np.sqrt(selected_var)
+
+    std_matrix = std_matrix.reshape(resolution, resolution)
     prob_matrix = predictions_probs[1, :].reshape(resolution, resolution)
 
     if ax1 is None:
@@ -192,20 +292,30 @@ def plot_heatmap(x, labels, model, alpha, x_std=None, cmap='winter', range_scale
     data_aspect_ratio = (y_max - y_min) / (x_max - x_min)
 
     # Use imshow to plot the heatmap
-    img = ax1.imshow(prob_matrix,
-                     extent=[x_values.min().item(), x_values.max().item(), y_values.min().item(),
-                             y_values.max().item()],
-                     origin='lower', cmap=cmap, alpha=0.7)
+    if heat_map_mode == 'prob':
+        img = ax1.imshow(prob_matrix,
+                         extent=[x_values.min().item(), x_values.max().item(), y_values.min().item(),
+                                 y_values.max().item()],
+                         origin='lower', cmap=cmap, alpha=0.7)
 
-    # Adding a colorbar
-    cbar = fig.colorbar(img, ax=ax1, label='Probabilities', pad=0.04, fraction=0.0458)
-    cbar.ax.set_ylabel('Probabilities', fontsize=24)  # Set the colorbar label fontsize
-    cbar.ax.tick_params(labelsize=20)  # Set the colorbar tick label fontsize
+        # Adding a colorbar
+        cbar = fig.colorbar(img, ax=ax1, label='Probabilities', pad=0.04, fraction=0.0458)
+        cbar.ax.set_ylabel('Probabilities', fontsize=AXIS_LABEL_FONTSIZE)  # Set the colorbar label fontsize
+    else:
+        img = ax1.imshow(std_matrix,
+                         extent=[x_values.min().item(), x_values.max().item(), y_values.min().item(),
+                                 y_values.max().item()],
+                         origin='lower', cmap=cmap, alpha=0.7)
+
+        # Adding a colorbar
+        cbar = fig.colorbar(img, ax=ax1, label='Standard Deviation', pad=0.04, fraction=0.0458)
+        cbar.ax.set_ylabel('Standard Deviation', fontsize=AXIS_LABEL_FONTSIZE)  # Set the colorbar label fontsize
+    cbar.ax.tick_params(labelsize=TICKS_LABEL_FONTSIZE)  # Set the colorbar tick label fontsize
 
     # Extracting the relevant dimensions from x_mu_list_test
-    color_list = ['black', 'white', 'r', 'b', 'g', 'c', 'm', 'y', 'k', 'lime', 'navy', 'teal']
+    color_list = ['r', 'b', 'black', 'white', 'g', 'c', 'm', 'y', 'k', 'lime', 'navy', 'teal']
     # label_list = ['class1', 'class2', 'class3']
-    label_list = [f'class{i+1}' for i in labels]
+    label_list = [f'class{i + 1}' for i in labels]
     for idx, label in enumerate(np.unique(labels)):
         ax1.scatter(x[labels == label, l1], x[labels == label, l2], c=color_list[idx], label=label_list[idx])
         if x_std is not None:
@@ -220,19 +330,20 @@ def plot_heatmap(x, labels, model, alpha, x_std=None, cmap='winter', range_scale
     if inducing_points is not None:
         ax1.scatter(z_cls[..., l1].ravel(),
                     z_cls[..., l2].ravel(),
-                    c='r', marker='x', label='Classification inducing points')
+                    c='g', marker='x', label='Classification inducing points')
         ax1.scatter(z_reg[..., l1].ravel(),
                     z_reg[..., l2].ravel(),
-                    c='blue', marker='x', label='Regression inducing points')
+                    c='yellow', marker='x', label='Regression inducing points')
 
     # Setting labels with larger font size (like the previous figure)
-    ax1.set_xlabel('x1', fontsize=28)
-    ax1.set_ylabel('x2', fontsize=28)
+    ax1.set_xlabel('x1', fontsize=AXIS_LABEL_FONTSIZE)
+    ax1.set_ylabel('x2', fontsize=AXIS_LABEL_FONTSIZE)
 
     # Setting tick label sizes (like the previous figure)
-    ax1.tick_params(axis='both', labelsize=24)
+    ax1.tick_params(axis='both', labelsize=TICKS_LABEL_FONTSIZE)
 
-    ax1.legend()
+    if show_legend is True:
+        ax1.legend(fontsize=16)
 
     # Adjusting spines (like the previous figure)
     for spine in ax1.spines.values():

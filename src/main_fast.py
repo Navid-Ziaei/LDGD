@@ -74,13 +74,14 @@ model_settings['data_dim'] = yn_train.shape[-1]
 batch_shape = torch.Size([model_settings['data_dim']])
 
 if model_settings['use_gpytorch'] is False:
-    kernel_cls = ARDRBFKernel(input_dim=model_settings['latent_dim'])
-    kernel_reg = ARDRBFKernel(input_dim=model_settings['latent_dim'])
+
     kernel_reg = gpytorch.kernels.ScaleKernel(
         gpytorch.kernels.RBFKernel(ard_num_dims=model_settings['latent_dim'])).to(device)
     kernel_cls = gpytorch.kernels.ScaleKernel(
         gpytorch.kernels.RBFKernel(ard_num_dims=model_settings['latent_dim'])).to(
         device)
+    kernel_cls = ARDRBFKernel(input_dim=model_settings['latent_dim'])
+    kernel_reg = ARDRBFKernel(input_dim=model_settings['latent_dim'])
 else:
     kernel_reg = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel(ard_num_dims=model_settings['latent_dim'])).to(
         device)

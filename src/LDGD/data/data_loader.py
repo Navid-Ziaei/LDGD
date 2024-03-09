@@ -24,7 +24,8 @@ from sklearn.datasets import load_iris, load_wine
 from sklearn.datasets import fetch_openml
 from sklearn.model_selection import train_test_split
 from sklearn.datasets import make_moons, make_circles, make_classification
-
+from torchvision.datasets import MNIST
+from torchvision.transforms import ToTensor
 
 def generate_data(pattern, n_samples=100, noise=0.1, n_features=50, increase_method='add_noise', random_state=None,
                   plot_data=False):
@@ -127,6 +128,24 @@ def load_dataset(dataset_name, test_size=0.1, **kwargs):
         usps_target = usps['target']
         X = usps_data.values
         y = usps_target.values - 1
+    elif dataset_name.lower() == 'mnist':
+        mnist_train = MNIST(root='./data', train=True, download=True, transform=ToTensor())
+        mnist_test = MNIST(root='./data', train=False, download=True, transform=ToTensor())
+
+        # Flatten the images and convert labels
+        X = mnist_train.data.view(mnist_train.data.size(0), -1).numpy()
+        X = X / X.max()
+        y = mnist_train.targets.numpy()
+
+        # Concatenate train and test sets to split them later
+        X_test = mnist_test.data.view(mnist_test.data.size(0), -1).numpy()
+        X_test = X_test / X_test.max()
+        y_test = mnist_test.targets.numpy()
+
+        X = np.concatenate((X, X_test), axis=0)
+        y = np.concatenate((y, y_test), axis=0)
+
+        orig_data = None  # No original data in the case of MNIST
     elif dataset_name.lower() == 'synthetic':
         # Extract parameters for synthetic data generation
         pattern = kwargs.get('pattern', 'moon')  # default pattern

@@ -1,0 +1,1 @@
+{"latent_dim": 2, "num_inducing_points_reg": 30, "num_inducing_points_cls": 30, "num_epochs_train": 5000, "num_epochs_test": 5000, "batch_size": 100, "load_trained_model": false, "load_tested_model": false, "use_gpytorch": true, "n_features": 10, "save_model": true, "load_model": false, "x_init": "pca", "shared_inducing_points": false}

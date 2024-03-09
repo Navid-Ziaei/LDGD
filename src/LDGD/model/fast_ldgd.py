@@ -90,7 +90,7 @@ class FastLDGD(AbstractLDGD):
         dist = gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
         return dist
 
-    def train_model(self, yn, ys, learning_rate=0.01, epochs=100, batch_size=100, early_stop=None, show_plot=False):
+    def train_model(self, yn, ys, learning_rate=0.01, epochs=100, batch_size=100, early_stop=None, show_plot=False, monitor_mse=False):
         optimizer = optim.Adam(self.parameters(), lr=learning_rate)
         losses, loss_terms, x_mu_list, x_sigma_list, z_list_cls, z_list_reg = [], [], [], [], [], []
         for epoch in range(epochs):

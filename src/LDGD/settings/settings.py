@@ -15,7 +15,7 @@ class Settings:
         self.__supported_experiments = {'p01': 1, 'p02': 1, 'p03': 4, 'p04': 99, 'p05': 2, 'p06': 99, 'p07': 99,
                                         'p08': 99, 'p09': 99, 'p10': 99, 'p11': 99, 'p12': 99, 'p13': 99, 'p14': 99,
                                         'p15': 99, 'p16': 99, 'p17': 99, 'p18': 99}
-        self.__supported_dataset = ['oil', 'wine', 'iris', 'usps', 'synthetic']
+        self.__supported_dataset = ['oil', 'wine', 'iris', 'usps', 'synthetic', 'mnist']
         self.__supported_models = ['jbgplvm']
         self.__supported_task = ['m_sequence', 'flicker', 'flicker_shape', 'imagine']
         self.__model = model

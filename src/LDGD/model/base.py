@@ -133,10 +133,9 @@ class AbstractLDGD(nn.Module, ABC):
     def predict_class(self, yn_test, learning_rate=0.01, epochs=100, batch_size=100, early_stop=None):
         pass
 
-    def evaluate(self, yn_test, ys_test, learning_rate=0.01, epochs=100, save_path=None, early_stop=None):
+    def evaluate(self, yn_test, ys_test, learning_rate=0.01, epochs=100, save_path=None, early_stop=None, verbos=1):
         predictions, history_test = self.predict_class(yn_test, learning_rate=learning_rate, epochs=epochs,
-                                                       early_stop=early_stop)
-        predictions = predictions.cpu()
+                                                       early_stop=early_stop, verbos=verbos)
         report = classification_report(y_true=ys_test, y_pred=predictions)
         print(report)
         metrics = {
@@ -175,7 +174,11 @@ class AbstractLDGD(nn.Module, ABC):
         if ys is not None:
             loss_cls = ell_cls - kl_u_cls / kl_u_cls.shape[0]
             elbo = loss_reg.sum() * self.reg_weight + loss_cls.sum() * self.cls_weight - kl_x
-            loss_dict = {'loss_reg': -loss_reg.sum().item(), 'loss_cls': -loss_cls.sum().item(), 'loss_kl': kl_x.item()}
+            loss_dict = {'loss_reg': -loss_reg.sum().item(),
+                         'loss_cls': -loss_cls.sum().item(),
+                         'loss_kl': kl_x.item(),
+                         'loss_kl_u_reg': kl_u_reg.sum().item()/ kl_u_reg.shape[0],
+                         'loss_kl_u_cls': kl_u_cls.sum().item()/ kl_u_cls.shape[0]}
         else:
             elbo = loss_reg.sum() * self.reg_weight - kl_x
             loss_dict = {'loss_reg': -loss_reg.sum().item(), 'loss_kl': kl_x.item()}
@@ -203,8 +206,8 @@ class AbstractLDGD(nn.Module, ABC):
 
         k_mm_cls += torch.eye(k_mm_cls.shape[-1], device=self.device) * self.jitter
 
-        predictive_dist_cls = self.q_f_cls.predictive_distribution(k_nn_cls, k_mm_cls,
-                                                                   k_mn_cls, variational_mean=self.q_u_cls.mu,
+        predictive_dist_cls = self.q_f_cls.predictive_distribution(k_nn=k_nn_cls, k_mm=k_mm_cls,
+                                                                   k_mn=k_mn_cls, variational_mean=self.q_u_cls.mu,
                                                                    variational_cov=self.q_u_cls.sigma,
                                                                    whitening_parameters=self.whitening_parameters)
 
@@ -328,11 +331,12 @@ class AbstractLDGD(nn.Module, ABC):
 
             x_test_sampled = x_test_sampled.to(self.device)
             predictive_dist_cls = self.q_f_cls(x=x_test_sampled, mode='cls')
-            predictions = self.likelihood_cls(predictive_dist_cls.mean).mean.argmax(dim=0)
+            predictions = self.likelihood_cls(predictive_dist_cls.mean).mean.argmax(dim=0).cpu().detach().numpy()
             predictions_probs = self.likelihood_cls(predictive_dist_cls.mean).mean.cpu().detach().numpy()
+            predictions_var = self.likelihood_cls(predictive_dist_cls.mean).variance.cpu().detach().numpy()
         else:
             batch_size = 500
-            predictions, predictions_probs = [], []
+            predictions, predictions_probs, predictions_var = [], [], []
             for i in range(0, x.shape[0], batch_size):
                 new_batch_size = np.min([i + batch_size, x.shape[0]]) - i
                 x_test_sampled = x[i:np.min([i + batch_size, x.shape[0]])]
@@ -356,11 +360,13 @@ class AbstractLDGD(nn.Module, ABC):
                                                                            k_mn_cls,
                                                                            variational_mean=self.q_u_cls.mu,
                                                                            variational_cov=self.q_u_cls.sigma)
-                predictions_probs.append(self.likelihood_cls(predictive_dist_cls.mean).mean.detach().numpy())
-                predictions.append(self.likelihood_cls(predictive_dist_cls.mean).mean.argmax(dim=0))
+                predictions_probs.append(self.likelihood_cls(predictive_dist_cls.mean).mean.cpu().detach().numpy())
+                predictions.append(self.likelihood_cls(predictive_dist_cls.mean).mean.argmax(dim=0).cpu().detach().numpy())
+                predictions_var.append(self.likelihood_cls(predictive_dist_cls.mean).variance.cpu().detach().numpy())
             predictions = np.concatenate(predictions, axis=0)
             predictions_probs = np.concatenate(predictions_probs, axis=1)
-        return predictions, predictions_probs
+            predictions_var = np.concatenate(predictions_var, axis=1)
+        return predictions, predictions_probs, predictions_var
 
     def regress_x(self, x):
         if self.use_gpytorch is True:

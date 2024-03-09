@@ -97,7 +97,7 @@ class LDGD(AbstractLDGD):
         return dist
 
     def train_model(self, yn, ys, learning_rate=0.01, epochs=100, batch_size=100, early_stop=None,
-                    show_plot=False, monitor_mse=False):
+                    show_plot=False, monitor_mse=False, verbos=1):
         optimizer = optim.Adam(self.parameters(), lr=learning_rate)
         losses, x_mu_list, x_sigma_list, z_list_cls, z_list_reg = [], [], [], [], []
         loss_terms = []
@@ -124,10 +124,11 @@ class LDGD(AbstractLDGD):
 
             if epoch % 10 == 0:
                 mse_loss = self.update_history_train(yn=yn, elbo_loss=loss.item(), monitor_mse=monitor_mse)
-                if monitor_mse is True:
-                    print(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}, MSE: {mse_loss}")
-                else:
-                    print(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}")
+                if verbos == 1:
+                    if monitor_mse is True:
+                        print(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}, MSE: {mse_loss}")
+                    else:
+                        print(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}")
                 # print(f"f_reg {self.q_f_reg.jitter_val}, f_cls: {self.q_f_cls.jitter_val}")
                 if early_stop is not None:
                     if len(losses) > 100:
@@ -143,7 +144,8 @@ class LDGD(AbstractLDGD):
 
         return losses, self.history_train
 
-    def predict_class(self, yn_test, learning_rate=0.01, epochs=100, batch_size=100, early_stop=None, monitor_mse=False):
+    def predict_class(self, yn_test, learning_rate=0.01, epochs=100, batch_size=100, early_stop=None, monitor_mse=False,
+                      verbos=1):
         if yn_test.shape[1] != self.d:
             raise ValueError(f"yn_test should be of size [num_test, {self.d}]")
 
@@ -176,7 +178,7 @@ class LDGD(AbstractLDGD):
         else:
             prior_x_test = torch.distributions.Normal(torch.zeros(self.n_test, self.q, device=self.device),
                                                       torch.ones(self.n_test, self.q, device=self.device))
-            self.x_test = VariationalLatentVariable(self.n_test, self.d, self.q, X_init=X_init, prior_x=prior_x_test)
+            self.x_test = VariationalLatentVariable(self.n_test, self.d, self.q, X_init=X_init, prior_x=prior_x_test).to(self.device)
 
         params_to_optimize = self.x_test.parameters()
         optimizer = optim.Adam(params_to_optimize, lr=learning_rate)
@@ -195,10 +197,11 @@ class LDGD(AbstractLDGD):
 
             if epoch % 10 == 0:
                 mse_loss = self.update_history_test(yn_test, elbo_loss=loss.item(), monitor_mse=monitor_mse)
-                if monitor_mse is True:
-                    print(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}, MSE: {mse_loss}")
-                else:
-                    print(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}")
+                if verbos == 1:
+                    if monitor_mse is True:
+                        print(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}, MSE: {mse_loss}")
+                    else:
+                        print(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}")
                 if early_stop is not None:
                     if len(losses) > 100:
                         ce = np.abs(losses[-1] - np.mean(losses[-100:])) / np.abs(np.mean(losses[-100:]))
