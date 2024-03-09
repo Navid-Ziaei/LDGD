@@ -1,7 +1,6 @@
 [![arXiv](https://img.shields.io/badge/arXiv-2206.03992-b31b1b.svg)](https://arxiv.org/abs/2401.16497)
 
-# A Discriminative Bayesian Gaussian Process Latent Variable Model for High-Dimensional Data
-# Latent Discriminative Generative Decoder (LDGD)
+# A Bayesian Gaussian Process-Based Latent Discriminative Generative Decoder (LDGD) Model for High-Dimensional Data
 
 ## Table of Contents
 * [General Information](#general-information)
@@ -11,9 +10,6 @@
 * [Reading in Data](#reading-in-edf-data)
 * [Repository Structure](#repository-structure)
 * [Citations](#citations)
-* [Status](#status)
-* [References](#references)
-* [Contact](#contact)
 <br/>
 * 
 ## General Information
@@ -25,21 +21,21 @@ For more details on our work and to cite it in your research, please visit our p
 ## Getting Started
 
 1. Step 1: Clone the Repository 
-'git clone https://github.com/Navid-Ziaei/gp_project_pytorch.git'
+`git clone https://github.com/Navid-Ziaei/gp_project_pytorch.git`
 
 2. Step 2: Navigate to the Project Directory
-'cd gp_project_pytorch'
+`cd gp_project_pytorch`
 
 3. Step 3: Update pip (optional but recommended)
-'python -m pip install --upgrade pip'
+`python -m pip install --upgrade pip`
 
 4. Step 4: Install virtualenv if you haven't already and activate it (you can use conda env as well)
 
 5. Step 5: Install the LDGD Package
-'python -m pip install'
+`python -m pip install`
 
 6. After installation, to verify if everything is set up correctly, run:
-python -c "import ldgd; print(ldgd.__version__)"
+`python -c "import ldgd; print(ldgd.__version__)`"
 
 ## Examples
 To help you get started with LDGD and to demonstrate its capabilities, we have included a variety of examples in the examples folder of the repository. These examples cover a range of applications and use cases, showing you how to implement Gaussian Process models with LDGD in your projects.
@@ -49,7 +45,7 @@ To help you get started with LDGD and to demonstrate its capabilities, we have i
 ## Repository Structure
 This repository is organized as follows:
 
-- `src/main.py`: The main script to run the BTsC model.
+- `src/main.py`: The main script to run the LDGD model.
 
 - `src/LDGD/data`: Contains scripts for data loading  and preprocessing .
 
@@ -65,7 +61,7 @@ This repository is organized as follows:
 <br/>
 
 ## Citations
-The code contained in this repository for BTsC is companion to the paper:  
+The code contained in this repository for LDGD is companion to the paper:  
 
 ```
 @article{ziaei2024discriminative,
@@ -80,7 +76,7 @@ which should be cited for academic use of this code.
 
 ## Contributing
 
-We encourage you to contribute to BTsC! Please check out the [Contributing to BTsC guide](CONTRIBUTING.md) for guidelines about how to proceed.
+We encourage you to contribute to LDGD! 
 
 ## License
 
