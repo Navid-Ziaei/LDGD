@@ -40,6 +40,8 @@ class LDGD(AbstractLDGD):
                          reg_weight=reg_weight,
                          random_state=random_state,
                          device=device)
+
+        self.attempts = 1
         if x_init == 'pca':
             x_init = torch.Tensor(PCA(n_components=self.q).fit_transform(y))
         else:
@@ -79,7 +81,8 @@ class LDGD(AbstractLDGD):
                                                      variational_distribution=self.q_u_reg,
                                                      jitter=self.jitter)
 
-            self.log_noise_sigma = nn.Parameter(torch.ones(self.d, device=self.device) * -2)
+            self.inducing_inputs_cls = nn.Parameter(self.inducing_inputs_cls)
+            self.inducing_inputs_reg = nn.Parameter(self.inducing_inputs_reg)
 
         self.to(device=self.device)
 
@@ -114,28 +117,36 @@ class LDGD(AbstractLDGD):
             ys_batch = ys[batch_index].to(self.device)
 
             # Calculate loss
-            loss, loss_dict = self.elbo(sample_batch, self.x, yn_batch, ys_batch)
-            losses.append(loss.item())
-            loss_terms.append(loss_dict)
+            try:
+                loss, loss_dict = self.elbo(sample_batch, self.x, yn_batch, ys_batch)
+                losses.append(loss.item())
+                loss_terms.append(loss_dict)
 
-            # Back propagate error
-            loss.backward()
-            optimizer.step()
+                # Back propagate error
+                loss.backward()
+                optimizer.step()
 
-            if epoch % 10 == 0:
-                mse_loss = self.update_history_train(yn=yn, elbo_loss=loss.item(), monitor_mse=monitor_mse)
-                if verbos == 1:
-                    if monitor_mse is True:
-                        print(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}, MSE: {mse_loss}")
-                    else:
-                        print(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}")
-                # print(f"f_reg {self.q_f_reg.jitter_val}, f_cls: {self.q_f_cls.jitter_val}")
-                if early_stop is not None:
-                    if len(losses) > 100:
-                        ce = np.abs(losses[-1] - np.mean(losses[-100:])) / np.abs(np.mean(losses[-100:]))
-                        if ce < early_stop:
-                            print("Early stop")
-                            break
+                if epoch % 10 == 0:
+                    mse_loss = self.update_history_train(yn=yn, elbo_loss=loss.item(), monitor_mse=monitor_mse)
+                    if verbos == 1:
+                        if monitor_mse is True:
+                            print(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}, MSE: {mse_loss}")
+                        else:
+                            print(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}")
+                    # print(f"f_reg {self.q_f_reg.jitter_val}, f_cls: {self.q_f_cls.jitter_val}")
+                    if early_stop is not None:
+                        if len(losses) > 100:
+                            ce = np.abs(losses[-1] - np.mean(losses[-100:])) / np.abs(np.mean(losses[-100:]))
+                            if ce < early_stop:
+                                print("Early stop")
+                                break
+            except:  # Replace SomeSpecificException with the actual exception you expect
+                if self.attempts < 0:
+                    self.attempts += 1
+                    self.jitter += 1e-4  # Increase jitter
+                    print(
+                        f"Attempt {self.attempts}: Error occurred, increasing jitter. New jitter: {self.jitter}")
+
 
         if show_plot is True:
             combined_dict = dicts_to_dict_of_lists(loss_terms)
@@ -178,7 +189,8 @@ class LDGD(AbstractLDGD):
         else:
             prior_x_test = torch.distributions.Normal(torch.zeros(self.n_test, self.q, device=self.device),
                                                       torch.ones(self.n_test, self.q, device=self.device))
-            self.x_test = VariationalLatentVariable(self.n_test, self.d, self.q, X_init=X_init, prior_x=prior_x_test).to(self.device)
+            self.x_test = VariationalLatentVariable(self.n_test, self.d, self.q, X_init=X_init,
+                                                    prior_x=prior_x_test).to(self.device)
 
         params_to_optimize = self.x_test.parameters()
         optimizer = optim.Adam(params_to_optimize, lr=learning_rate)
@@ -190,24 +202,34 @@ class LDGD(AbstractLDGD):
             x_test = self.x_test()
             x_test_sampled = x_test[batch_index].to(self.device)
             yn_test_batch = yn_test[batch_index].to(self.device)
-            loss, _ = self.elbo(x_test_sampled, self.x_test, yn_test_batch)
-            losses.append(loss.item())
-            loss.backward(retain_graph=True)
-            optimizer.step()
+            try:
+                loss, _ = self.elbo(x_test_sampled, self.x_test, yn_test_batch)
 
-            if epoch % 10 == 0:
-                mse_loss = self.update_history_test(yn_test, elbo_loss=loss.item(), monitor_mse=monitor_mse)
-                if verbos == 1:
-                    if monitor_mse is True:
-                        print(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}, MSE: {mse_loss}")
-                    else:
-                        print(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}")
-                if early_stop is not None:
-                    if len(losses) > 100:
-                        ce = np.abs(losses[-1] - np.mean(losses[-100:])) / np.abs(np.mean(losses[-100:]))
-                        if ce < early_stop:
-                            print("Early stop")
-                            break
+                losses.append(loss.item())
+                loss.backward(retain_graph=True)
+                optimizer.step()
+
+                if epoch % 10 == 0:
+                    mse_loss = self.update_history_test(yn_test, elbo_loss=loss.item(), monitor_mse=monitor_mse)
+                    if verbos == 1:
+                        if monitor_mse is True:
+                            print(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}, MSE: {mse_loss}")
+                        else:
+                            print(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}")
+                    if early_stop is not None:
+                        if len(losses) > 100:
+                            ce = np.abs(losses[-1] - np.mean(losses[-100:])) / np.abs(np.mean(losses[-100:]))
+                            if ce < early_stop:
+                                print("Early stop")
+                                break
+
+            except:  # Replace SomeSpecificException with the actual exception you expect
+                if self.attempts < 0:
+                    self.attempts += 1
+                    self.jitter += 1e-4  # Increase jitter
+                    print(
+                        f"Attempt {self.attempts}: Error occurred, increasing jitter. New jitter: {self.jitter}")
+
 
         predictions, *_ = self.classify_x(self.x_test.q_mu)
         return predictions, self.history_test
@@ -261,5 +283,5 @@ class LDGD(AbstractLDGD):
             mse_loss = np.mean(np.square(yn_test.cpu().detach().numpy() - predicted_yn.cpu().detach().numpy()))
             self.history_test['mse_loss'].append(mse_loss)
         else:
-            mse_loss=None
+            mse_loss = None
         return mse_loss

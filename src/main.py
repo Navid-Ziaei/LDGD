@@ -20,7 +20,7 @@ import winsound
 duration = 800  # milliseconds
 freq = 440  # Hz
 # Set the seed for reproducibility
-random_state = None
+random_state = 42
 np.random.seed(42)
 torch.manual_seed(42)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -35,14 +35,14 @@ paths.load_device_paths()
 
 model_settings = {
     'latent_dim': 2,
-    'num_inducing_points_reg': 7,
-    'num_inducing_points_cls': 7,
-    'num_epochs_train': 2500,
-    'num_epochs_test': 2500,
+    'num_inducing_points_reg': 5,
+    'num_inducing_points_cls': 5,
+    'num_epochs_train': 700,
+    'num_epochs_test': 700,
     'batch_size': 100,
-    'load_trained_model': True,
+    'load_trained_model': False,
     'load_tested_model': False,
-    'use_gpytorch': True,
+    'use_gpytorch': False,
     'n_features': 20,
     'dataset': settings.dataset,
     'shared_inducing_points': True,
@@ -133,11 +133,11 @@ for idx, var in enumerate(out_std):
     selected_var = var[label_pred == idx]
     var_array[label_pred == idx] = selected_var
 
-"""animate_train(history_train['x_mu_list'], labels_train, 'train_animation_with_inducing',
+animate_train(history_train['x_mu_list'], labels_train, 'train_animation_with_inducing',
               save_path=paths.path_result[0],
               inverse_length_scale=alpha_cls,
               inducing_points_history=(history_train['z_list_reg'], history_train['z_list_cls']))
-"""
+
 """predicted_yn, predicted_yn_std = model.regress_x(np.array([[2, -1]]))
 print(np.mean(np.mean(np.square(yn_train[labels_train == 0] - predicted_yn).detach().numpy(), 1)))
 print(np.mean(np.mean(np.square(yn_train[labels_train == 1] - predicted_yn).detach().numpy(), 1)))

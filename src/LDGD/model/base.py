@@ -354,12 +354,23 @@ class AbstractLDGD(nn.Module, ABC):
                     k_mm_cls = self.kernel_cls(self.inducing_inputs_cls, self.inducing_inputs_cls).evaluate()
                     k_mn_cls = self.kernel_cls(self.inducing_inputs_cls, x_samples).evaluate()
 
-                k_mm_cls += torch.eye(k_mm_cls.shape[-1], device=self.device) * self.jitter
 
-                predictive_dist_cls = self.q_f_cls.predictive_distribution(k_nn_cls, k_mm_cls,
-                                                                           k_mn_cls,
-                                                                           variational_mean=self.q_u_cls.mu,
-                                                                           variational_cov=self.q_u_cls.sigma)
+                attempts = 0
+                success = False
+                while attempts < 3 and not success:
+                    try:
+                        k_mm_cls += torch.eye(k_mm_cls.shape[-1], device=self.device) * self.jitter
+                        predictive_dist_cls = self.q_f_cls.predictive_distribution(
+                            k_nn_cls, k_mm_cls, k_mn_cls,
+                            variational_mean=self.q_u_cls.mu,
+                            variational_cov=self.q_u_cls.sigma)
+                        success = True  # If this line is reached, no errors occurred
+                    except:  # Replace SomeSpecificException with the actual exception you expect
+                        attempts += 1
+                        self.jitter += 1e-4  # Increase jitter
+                        print(f"Attempt {attempts}: Error occurred, increasing jitter. New jitter: {self.jitter*attempts}")
+                        # Optionally, handle or log the exception e here
+
                 predictions_probs.append(self.likelihood_cls(predictive_dist_cls.mean).mean.cpu().detach().numpy())
                 predictions.append(self.likelihood_cls(predictive_dist_cls.mean).mean.argmax(dim=0).cpu().detach().numpy())
                 predictions_var.append(self.likelihood_cls(predictive_dist_cls.mean).variance.cpu().detach().numpy())

@@ -91,6 +91,10 @@ class VariationalLatentVariableNN(nn.Module):
         self.encoder = nn.Sequential(
             nn.Linear(data_dim, hidden_dim1),
             nn.ReLU(),
+            nn.Linear(hidden_dim1, hidden_dim1),
+            nn.ReLU(),
+            nn.Linear(hidden_dim1, hidden_dim1),
+            nn.ReLU(),
             nn.Linear(hidden_dim1, hidden_dim2),
             nn.ReLU()
         ).to(self.device)

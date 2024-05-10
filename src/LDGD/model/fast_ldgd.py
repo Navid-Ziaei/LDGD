@@ -8,7 +8,6 @@ import gpytorch
 import numpy as np
 import torch.nn as nn
 from torch import optim
-from sklearn.metrics import classification_report, accuracy_score, precision_score, recall_score, f1_score
 from .base import AbstractLDGD
 
 
@@ -25,7 +24,7 @@ class FastLDGD(AbstractLDGD):
                  reg_weight=1.0,
                  random_state=None,
                  device=None):
-        super().__init__(y, kernel_reg, kernel_cls, likelihood_reg, likelihood_cls, latent_dim=2,
+        super().__init__(y, kernel_reg, kernel_cls, likelihood_reg, likelihood_cls, latent_dim=latent_dim,
                          num_inducing_points_reg=num_inducing_points_reg,
                          num_inducing_points_cls=num_inducing_points_cls,
                          num_classes=num_classes,
@@ -90,7 +89,8 @@ class FastLDGD(AbstractLDGD):
         dist = gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
         return dist
 
-    def train_model(self, yn, ys, learning_rate=0.01, epochs=100, batch_size=100, early_stop=None, show_plot=False, monitor_mse=False):
+    def train_model(self, yn, ys, learning_rate=0.01, epochs=100, batch_size=100, early_stop=None, show_plot=False, monitor_mse=False,
+                    yn_test=None, ys_test=None):
         optimizer = optim.Adam(self.parameters(), lr=learning_rate)
         losses, loss_terms, x_mu_list, x_sigma_list, z_list_cls, z_list_reg = [], [], [], [], [], []
         for epoch in range(epochs):
@@ -117,8 +117,16 @@ class FastLDGD(AbstractLDGD):
 
             if epoch % 10 == 0:
 
+
                 mse_loss = self.update_history_train(yn=yn, elbo_loss=loss.item())
-                print(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}, MSE: {mse_loss}")
+                if yn_test is not None:
+                    predicted_ys_test, *_ = self.predict_class(yn_test)
+                    accuracy_test = np.mean(predicted_ys_test == ys_test)
+                    predicted_ys_train, *_ = self.predict_class(yn)
+                    accuracy_train = np.mean(np.array(predicted_ys_train) == np.array(np.argmax(ys, axis=-1)))
+                    print(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}, MSE: {mse_loss}, Train Accuracy: {accuracy_train} Test Accuracy: {accuracy_test}")
+                else:
+                    print(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}, MSE: {mse_loss}")
                 if early_stop is not None:
                     if len(losses) > 100:
                         ce = np.abs(losses[-1] - np.mean(losses[-100:])) / np.abs(np.mean(losses[-100:]))
@@ -133,7 +141,7 @@ class FastLDGD(AbstractLDGD):
 
         return losses, self.history_train
 
-    def predict_class(self, yn_test, learning_rate=0.01, epochs=100, batch_size=100, early_stop=None):
+    def predict_class(self, yn_test, learning_rate=0.01, epochs=100, batch_size=100, early_stop=None, verbos=None):
         if yn_test.shape[1] != self.d:
             raise ValueError(f"yn_test should be of size [num_test, {self.d}]")
 
