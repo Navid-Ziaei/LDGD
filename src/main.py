@@ -146,7 +146,8 @@ predictions, metrics, history_test, *_ = model.evaluate(yn_test=yn_test, ys_test
                                                         epochs=model_settings['num_epochs_test'],
                                                         save_path=paths.path_result[0])
 
-animate_train(history_test['x_mu_list'], labels_test, 'test_animation_with_inducing', save_path=paths.path_result[0],
+animate_train(history_test['x_mu_list'], labels_test, 'test_animation_with_inducing',
+              save_path=paths.path_result[0],
               inverse_length_scale=alpha_cls,
               inducing_points_history=(history_test['z_list_reg'], history_test['z_list_cls']))
 

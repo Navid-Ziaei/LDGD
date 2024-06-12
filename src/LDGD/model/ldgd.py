@@ -100,7 +100,11 @@ class LDGD(AbstractLDGD):
         return dist
 
     def train_model(self, yn, ys, learning_rate=0.01, epochs=100, batch_size=100, early_stop=None,
-                    show_plot=False, monitor_mse=False, verbos=1):
+                    show_plot=False, monitor_mse=False, verbos=1, **kwargs):
+        if kwargs.get('disp_interval') is not None:
+            disp_interval = kwargs.get('disp_interval')
+        else:
+            disp_interval = 10
         optimizer = optim.Adam(self.parameters(), lr=learning_rate)
         losses, x_mu_list, x_sigma_list, z_list_cls, z_list_reg = [], [], [], [], []
         loss_terms = []
@@ -126,13 +130,19 @@ class LDGD(AbstractLDGD):
                 loss.backward()
                 optimizer.step()
 
-                if epoch % 10 == 0:
+                if epoch % disp_interval == 0:
                     mse_loss = self.update_history_train(yn=yn, elbo_loss=loss.item(), monitor_mse=monitor_mse)
+                    loss_dict['mse_loss'] = mse_loss
+
+                    predicted_ys_train, *_ = self.classify_x(self.x.q_mu)
+                    accuracy_train = np.mean(predicted_ys_train == np.argmax(ys.detach().cpu().numpy(), axis=-1))
+                    loss_dict['accuracy'] = accuracy_train
+
                     if verbos == 1:
                         if monitor_mse is True:
-                            print(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}, MSE: {mse_loss}")
+                            print(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}, MSE: {mse_loss}, Accuracy: {accuracy_train}")
                         else:
-                            print(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}")
+                            print(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}, Accuracy: {accuracy_train}")
                     # print(f"f_reg {self.q_f_reg.jitter_val}, f_cls: {self.q_f_cls.jitter_val}")
                     if early_stop is not None:
                         if len(losses) > 100:
@@ -147,15 +157,14 @@ class LDGD(AbstractLDGD):
                     print(
                         f"Attempt {self.attempts}: Error occurred, increasing jitter. New jitter: {self.jitter}")
 
-
+        combined_dict = dicts_to_dict_of_lists(loss_terms)
         if show_plot is True:
-            combined_dict = dicts_to_dict_of_lists(loss_terms)
             plot_loss(combined_dict)
             plot_loss(losses)
 
-        return losses, self.history_train
+        return losses, combined_dict, self.history_train
 
-    def predict_class(self, yn_test, learning_rate=0.01, epochs=100, batch_size=100, early_stop=None, monitor_mse=False,
+    def predict_class(self, yn_test, ys_test, learning_rate=0.01, epochs=100, batch_size=100, early_stop=None, monitor_mse=False,
                       verbos=1):
         if yn_test.shape[1] != self.d:
             raise ValueError(f"yn_test should be of size [num_test, {self.d}]")
@@ -195,7 +204,8 @@ class LDGD(AbstractLDGD):
         params_to_optimize = self.x_test.parameters()
         optimizer = optim.Adam(params_to_optimize, lr=learning_rate)
 
-        losses, x_mu_list, x_sigma_list, z_list_reg, z_list_cls = [], [], [], [], []
+
+        losses, loss_terms, x_mu_list, x_sigma_list, z_list_reg, z_list_cls = [], [], [], [], [], []
         for epoch in range(epochs):
             batch_index = self._get_batch_idx(batch_size, self.n_test)
             optimizer.zero_grad()
@@ -203,7 +213,9 @@ class LDGD(AbstractLDGD):
             x_test_sampled = x_test[batch_index].to(self.device)
             yn_test_batch = yn_test[batch_index].to(self.device)
             try:
-                loss, _ = self.elbo(x_test_sampled, self.x_test, yn_test_batch)
+                loss, loss_dict = self.elbo(x_samples=x_test_sampled,
+                                            x=self.x_test,
+                                            yn=yn_test_batch)
 
                 losses.append(loss.item())
                 loss.backward(retain_graph=True)
@@ -211,11 +223,18 @@ class LDGD(AbstractLDGD):
 
                 if epoch % 10 == 0:
                     mse_loss = self.update_history_test(yn_test, elbo_loss=loss.item(), monitor_mse=monitor_mse)
+                    loss_dict['mse_loss'] = mse_loss
+                    predicted_ys_test, *_ = self.classify_x(self.x_test.q_mu)
+                    accuracy_test = np.mean(predicted_ys_test == ys_test)
+                    loss_dict['accuracy'] = accuracy_test
                     if verbos == 1:
                         if monitor_mse is True:
-                            print(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}, MSE: {mse_loss}")
+                            print(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}, MSE: {mse_loss}, Accuracy: {accuracy_test}")
                         else:
-                            print(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}")
+                            print(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}, Accuracy: {accuracy_test}")
+
+                    loss_terms.append(loss_dict)
+
                     if early_stop is not None:
                         if len(losses) > 100:
                             ce = np.abs(losses[-1] - np.mean(losses[-100:])) / np.abs(np.mean(losses[-100:]))

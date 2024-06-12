@@ -23,7 +23,8 @@ class FastLDGD(AbstractLDGD):
                  cls_weight=1.0,
                  reg_weight=1.0,
                  random_state=None,
-                 device=None):
+                 device=None,
+                 nn_encoder=None):
         super().__init__(y, kernel_reg, kernel_cls, likelihood_reg, likelihood_cls, latent_dim=latent_dim,
                          num_inducing_points_reg=num_inducing_points_reg,
                          num_inducing_points_cls=num_inducing_points_cls,
@@ -41,7 +42,8 @@ class FastLDGD(AbstractLDGD):
         if self.use_gpytorch is True:
             x_prior_mean = torch.zeros(self.n, self.q, device=self.device)  # shape: N x Q
             self.prior_x = gpytorch.priors.NormalPrior(x_prior_mean, torch.ones_like(x_prior_mean, device=self.device))
-            self.x = VariationalLatentVariableNN(self.n, self.d, self.q, x_init, self.prior_x)
+            self.x = VariationalLatentVariableNN(self.n, self.d, self.q, x_init, self.prior_x,
+                                                 nn_encoder=nn_encoder)
 
             self.q_u_reg = gpytorch.variational.CholeskyVariationalDistribution(self.m_reg,
                                                                                 batch_shape=self.batch_shape_reg)
@@ -59,7 +61,8 @@ class FastLDGD(AbstractLDGD):
         else:
             self.prior_x = torch.distributions.Normal(torch.zeros(self.n, self.q, device=self.device),
                                                       torch.ones(self.n, self.q, device=self.device))
-            self.x = VariationalLatentVariableNN(self.n, self.d, self.q, X_init=x_init, prior_x=self.prior_x)
+            self.x = VariationalLatentVariableNN(self.n, self.d, self.q, X_init=x_init, prior_x=self.prior_x,
+                                                 nn_encoder=nn_encoder)
 
             self.q_u_reg = CholeskeyVariationalDist(num_inducing_points=self.m_reg, batch_shape=self.d)
             self.q_u_cls = CholeskeyVariationalDist(num_inducing_points=self.m_cls, batch_shape=self.k)
@@ -90,7 +93,11 @@ class FastLDGD(AbstractLDGD):
         return dist
 
     def train_model(self, yn, ys, learning_rate=0.01, epochs=100, batch_size=100, early_stop=None, show_plot=False, monitor_mse=False,
-                    yn_test=None, ys_test=None):
+                    yn_test=None, ys_test=None, **kwargs):
+        if kwargs.get('disp_interval') is not None:
+            disp_interval = kwargs.get('disp_interval')
+        else:
+            disp_interval = 10
         optimizer = optim.Adam(self.parameters(), lr=learning_rate)
         losses, loss_terms, x_mu_list, x_sigma_list, z_list_cls, z_list_reg = [], [], [], [], [], []
         for epoch in range(epochs):
@@ -109,24 +116,27 @@ class FastLDGD(AbstractLDGD):
             # Calculate loss
             loss, loss_dict = self.elbo(sample_batch, self.x, yn_batch, ys_batch)
             losses.append(loss.item())
-            loss_terms.append(loss_dict)
 
             # Back propagate error
             loss.backward()
             optimizer.step()
 
-            if epoch % 10 == 0:
-
-
+            if epoch % disp_interval == 0:
                 mse_loss = self.update_history_train(yn=yn, elbo_loss=loss.item())
+                loss_dict['mse_loss'] = mse_loss
                 if yn_test is not None:
-                    predicted_ys_test, *_ = self.predict_class(yn_test)
+                    predicted_ys_test, *_ = self.predict_class(yn_test, ys_test)
                     accuracy_test = np.mean(predicted_ys_test == ys_test)
-                    predicted_ys_train, *_ = self.predict_class(yn)
+                    predicted_ys_train, *_ = self.predict_class(yn, ys)
                     accuracy_train = np.mean(np.array(predicted_ys_train) == np.array(np.argmax(ys, axis=-1)))
                     print(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}, MSE: {mse_loss}, Train Accuracy: {accuracy_train} Test Accuracy: {accuracy_test}")
+                    loss_dict['accuracy_train'] = accuracy_train
+                    loss_dict['accuracy_test'] = accuracy_test
+                    loss_dict['mse_loss'] = mse_loss
+                    loss_dict['total_loss'] = loss.item()
                 else:
                     print(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}, MSE: {mse_loss}")
+                loss_terms.append(loss_dict)
                 if early_stop is not None:
                     if len(losses) > 100:
                         ce = np.abs(losses[-1] - np.mean(losses[-100:])) / np.abs(np.mean(losses[-100:]))
@@ -134,14 +144,14 @@ class FastLDGD(AbstractLDGD):
                             print("Early stop")
                             break
 
+        combined_dict = dicts_to_dict_of_lists(loss_terms)
         if show_plot is True:
-            combined_dict = dicts_to_dict_of_lists(loss_terms)
             plot_loss(combined_dict)
             plot_loss(losses)
 
-        return losses, self.history_train
+        return losses, combined_dict, self.history_train
 
-    def predict_class(self, yn_test, learning_rate=0.01, epochs=100, batch_size=100, early_stop=None, verbos=None):
+    def predict_class(self, yn_test, ys_test, learning_rate=0.01, epochs=100, batch_size=100, early_stop=None, verbos=None):
         if yn_test.shape[1] != self.d:
             raise ValueError(f"yn_test should be of size [num_test, {self.d}]")
 
@@ -153,7 +163,6 @@ class FastLDGD(AbstractLDGD):
         return predictions, self.history_test
 
     def update_history_train(self, yn, elbo_loss):
-
         if self.use_gpytorch is False:
             x_mu, x_sigma = self.x.encode(yn.to(self.device))
             x_mu = x_mu.cpu().detach().numpy()

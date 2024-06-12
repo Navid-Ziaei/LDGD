@@ -72,7 +72,7 @@ class VariationalLatentVariable(nn.Module):
 
 
 class VariationalLatentVariableNN(nn.Module):
-    def __init__(self, n, data_dim, latent_dim, X_init, prior_x, device=None):
+    def __init__(self, n, data_dim, latent_dim, X_init, prior_x, device=None, nn_encoder=None):
         super(VariationalLatentVariableNN, self).__init__()
 
         if device is not None:
@@ -85,23 +85,26 @@ class VariationalLatentVariableNN(nn.Module):
         self.n = n
         self.data_dim = data_dim
 
-        hidden_dim1 = 50
-        hidden_dim2 = 20
+        if nn_encoder is None:
+            hidden_dim1 = 50
+            hidden_dim2 = 20
 
-        self.encoder = nn.Sequential(
-            nn.Linear(data_dim, hidden_dim1),
-            nn.ReLU(),
-            nn.Linear(hidden_dim1, hidden_dim1),
-            nn.ReLU(),
-            nn.Linear(hidden_dim1, hidden_dim1),
-            nn.ReLU(),
-            nn.Linear(hidden_dim1, hidden_dim2),
-            nn.ReLU()
-        ).to(self.device)
+            self.encoder = nn.Sequential(
+                nn.LazyLinear(hidden_dim1),
+                nn.ReLU(),
+                nn.Linear(hidden_dim1, hidden_dim1),
+                nn.ReLU(),
+                nn.Linear(hidden_dim1, hidden_dim1),
+                nn.ReLU(),
+                nn.Linear(hidden_dim1, hidden_dim2),
+                nn.ReLU()
+            ).to(self.device)
+        else:
+            self.encoder = nn_encoder.to(self.device)
 
         # latent mean and variance
-        self.mean_layer = nn.Linear(hidden_dim2, latent_dim)
-        self.logvar_layer = nn.Linear(hidden_dim2, latent_dim)
+        self.mean_layer = nn.LazyLinear(latent_dim)
+        self.logvar_layer = nn.LazyLinear(latent_dim)
 
         # Local variational params per latent point with dimensionality latent_dim
         self.kl_loss = None
