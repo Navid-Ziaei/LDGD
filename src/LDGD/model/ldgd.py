@@ -105,9 +105,18 @@ class LDGD(AbstractLDGD):
             disp_interval = kwargs.get('disp_interval')
         else:
             disp_interval = 10
+
+
+        if kwargs.get('save_best_result') is not None:
+            save_best_result = kwargs.get('save_best_result')
+        else:
+            save_best_result = False
+
         optimizer = optim.Adam(self.parameters(), lr=learning_rate)
         losses, x_mu_list, x_sigma_list, z_list_cls, z_list_reg = [], [], [], [], []
         loss_terms = []
+        best_acc = 0.0
+        best_loss = 999999
         for epoch in range(epochs):
             batch_index = self._get_batch_idx(batch_size, self.n)
 
@@ -137,6 +146,13 @@ class LDGD(AbstractLDGD):
                     predicted_ys_train, *_ = self.classify_x(self.x.q_mu)
                     accuracy_train = np.mean(predicted_ys_train == np.argmax(ys.detach().cpu().numpy(), axis=-1))
                     loss_dict['accuracy'] = accuracy_train
+
+                    if save_best_result is True:
+                        if accuracy_train >= best_acc and loss.item()<best_loss:
+                            best_acc = accuracy_train
+                            best_loss = loss.item()
+                            self.save_wights(path_save=kwargs.get('path_save'))
+                            print("model saved!")
 
                     if verbos == 1:
                         if monitor_mse is True:

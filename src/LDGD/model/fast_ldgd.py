@@ -92,14 +92,23 @@ class FastLDGD(AbstractLDGD):
         dist = gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
         return dist
 
-    def train_model(self, yn, ys, learning_rate=0.01, epochs=100, batch_size=100, early_stop=None, show_plot=False, monitor_mse=False,
+    def train_model(self, yn, ys, learning_rate=0.01, epochs=100, batch_size=100, early_stop=None, show_plot=False,
+                    monitor_mse=False,
                     yn_test=None, ys_test=None, **kwargs):
         if kwargs.get('disp_interval') is not None:
             disp_interval = kwargs.get('disp_interval')
         else:
             disp_interval = 10
+
+        if kwargs.get('save_best_result') is not None:
+            save_best_result = kwargs.get('save_best_result')
+        else:
+            save_best_result = False
+
         optimizer = optim.Adam(self.parameters(), lr=learning_rate)
         losses, loss_terms, x_mu_list, x_sigma_list, z_list_cls, z_list_reg = [], [], [], [], [], []
+        best_acc = 0.0
+        best_loss = 999999
         for epoch in range(epochs):
             batch_index = self._get_batch_idx(batch_size, self.n)
 
@@ -129,11 +138,19 @@ class FastLDGD(AbstractLDGD):
                     accuracy_test = np.mean(predicted_ys_test == ys_test)
                     predicted_ys_train, *_ = self.predict_class(yn, ys)
                     accuracy_train = np.mean(np.array(predicted_ys_train) == np.array(np.argmax(ys, axis=-1)))
-                    print(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}, MSE: {mse_loss}, Train Accuracy: {accuracy_train} Test Accuracy: {accuracy_test}")
+                    print(
+                        f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}, MSE: {mse_loss}, Train Accuracy: {accuracy_train} Test Accuracy: {accuracy_test}")
                     loss_dict['accuracy_train'] = accuracy_train
                     loss_dict['accuracy_test'] = accuracy_test
                     loss_dict['mse_loss'] = mse_loss
                     loss_dict['total_loss'] = loss.item()
+
+                    if save_best_result is True:
+                        if accuracy_test >= best_acc and loss.item() < best_loss:
+                            best_acc = accuracy_test
+                            best_loss = loss.item()
+                            self.save_wights(path_save=kwargs.get('path_save'))
+                            print("model saved!")
                 else:
                     print(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}, MSE: {mse_loss}")
                 loss_terms.append(loss_dict)
@@ -151,7 +168,8 @@ class FastLDGD(AbstractLDGD):
 
         return losses, combined_dict, self.history_train
 
-    def predict_class(self, yn_test, ys_test, learning_rate=0.01, epochs=100, batch_size=100, early_stop=None, verbos=None):
+    def predict_class(self, yn_test, ys_test, learning_rate=0.01, epochs=100, batch_size=100, early_stop=None,
+                      verbos=None):
         if yn_test.shape[1] != self.d:
             raise ValueError(f"yn_test should be of size [num_test, {self.d}]")
 
