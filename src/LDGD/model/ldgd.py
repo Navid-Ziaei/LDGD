@@ -267,7 +267,8 @@ class LDGD(AbstractLDGD):
 
 
         predictions, *_ = self.classify_x(self.x_test.q_mu)
-        return predictions, self.history_test
+        combined_dict = dicts_to_dict_of_lists(loss_terms)
+        return predictions, self.history_test, combined_dict
 
     def update_history_train(self, yn, elbo_loss, monitor_mse=False):
 

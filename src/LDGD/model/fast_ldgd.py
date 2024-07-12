@@ -178,7 +178,8 @@ class FastLDGD(AbstractLDGD):
 
         x_test_mu, x_test_logvar = self.x.encode(yn_test.to(self.device))
         predictions, *_ = self.classify_x(x_test_mu)
-        return predictions, self.history_test
+        loss_terms = None
+        return predictions, self.history_test, loss_terms
 
     def update_history_train(self, yn, elbo_loss):
         if self.use_gpytorch is False:
