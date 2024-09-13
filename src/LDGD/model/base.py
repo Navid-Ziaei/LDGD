@@ -113,7 +113,14 @@ class AbstractLDGD(nn.Module, ABC):
             'z_list_reg': [],
             'mse_loss': []
         }
-        self.history_test = {}
+        self.history_test = {
+            'elbo_loss': [],
+            'x_mu_list': [],
+            'x_sigma_list': [],
+            'z_list_cls': [],
+            'z_list_reg': [],
+            'mse_loss': []
+        }
 
         self.to(device=self.device)
 
@@ -133,11 +140,16 @@ class AbstractLDGD(nn.Module, ABC):
     def predict_class(self, yn_test, ys_test, learning_rate=0.01, epochs=100, batch_size=100, early_stop=None):
         pass
 
-    def evaluate(self, yn_test, ys_test, learning_rate=0.01, epochs=100, save_path=None, early_stop=None, verbos=1):
+    def evaluate(self, yn_test, ys_test, learning_rate=0.01, epochs=100, save_path=None, early_stop=None, verbos=1, target_names=None):
         predictions, history_test, loss_terms = self.predict_class(yn_test, ys_test, learning_rate=learning_rate, epochs=epochs,
                                                        early_stop=early_stop, verbos=verbos)
-        report = classification_report(y_true=ys_test, y_pred=predictions)
+
+
+        report = classification_report(y_true=ys_test, y_pred=predictions, target_names=target_names)
         print(report)
+        report_results = classification_report(y_true=ys_test, y_pred=predictions, output_dict=True, target_names=target_names)
+
+
         metrics = {
             'accuracy': accuracy_score(ys_test, predictions),
             'precision': precision_score(ys_test, predictions, average='weighted'),
@@ -152,14 +164,13 @@ class AbstractLDGD(nn.Module, ABC):
             with open(save_path + 'classification_result.json', "w") as file:
                 json.dump(metrics, file, indent=2)
 
-        return predictions, metrics, history_test, loss_terms
+        return predictions, metrics, history_test, loss_terms, report_results
 
     def elbo(self, x_samples, x, yn, ys=None):
         if self.use_gpytorch is True:
             if ys is not None:
                 ell_cls, kl_u_cls = self.ell_cls_pytorch(x_samples=x_samples, ys=ys)
             ell_reg, kl_u_reg = self.ell_reg_pytorch(x_samples=x_samples, yn=yn)
-
         else:
             if ys is not None:
                 ell_cls, kl_u_cls = self.ell_cls_scratch(x_samples=x_samples, ys=ys)
@@ -170,9 +181,9 @@ class AbstractLDGD(nn.Module, ABC):
         else:
             kl_x = x._added_loss_terms['x_kl'].loss()
 
-        loss_reg = ell_reg - kl_u_reg / kl_u_reg.shape[0]
+        loss_reg = ell_reg - kl_u_reg/ kl_u_reg.shape[0]
         if ys is not None:
-            loss_cls = ell_cls - kl_u_cls / kl_u_cls.shape[0]
+            loss_cls = ell_cls - kl_u_cls/ kl_u_cls.shape[0]
             elbo = loss_reg.sum() * self.reg_weight + loss_cls.sum() * self.cls_weight - kl_x
             loss_dict = {'loss_reg': -loss_reg.sum().item(),
                          'loss_cls': -loss_cls.sum().item(),

@@ -32,9 +32,8 @@ paths.load_device_paths()
 
 model_settings = {
     'latent_dim': 5,
-    'num_inducing_points_reg': 100,
-    'num_inducing_points_cls': 30,
-    'num_inducing_points': 5,
+    'num_inducing_points_reg': 7,
+    'num_inducing_points_cls': 7,
     'num_epochs_train': 1500,
     'num_epochs_test': 1500,
     'batch_size': 100,
@@ -98,7 +97,6 @@ model = FastLDGD(yn_train,
                  latent_dim=model_settings['latent_dim'],
                  num_inducing_points_reg=model_settings['num_inducing_points_reg'],
                  num_inducing_points_cls=model_settings['num_inducing_points_cls'],
-                 num_inducing_points=model_settings['num_inducing_points'],
                  likelihood_reg=likelihood_reg,
                  likelihood_cls=likelihood_cls,
                  use_gpytorch=model_settings['use_gpytorch'],
@@ -109,9 +107,10 @@ model = FastLDGD(yn_train,
                  random_state=random_state)
 
 if model_settings['load_trained_model'] is False:
-    losses, history_train = model.train_model(yn=yn_train, ys=ys_train,
-                                              epochs=model_settings['num_epochs_train'],
-                                              batch_size=model_settings['batch_size'], show_plot=True)
+    losses, combined_dict, history_train = model.train_model(yn=yn_train, ys=ys_train,
+                                                             epochs=model_settings['num_epochs_train'],
+                                                             batch_size=model_settings['batch_size'], show_plot=True,
+                                                             yn_test=yn_test, ys_test=labels_test)
     model.save_wights(path_save=paths.path_model[0])
 
     with open(paths.path_model[0] + 'model_settings.json', 'w') as f:
@@ -177,4 +176,3 @@ plt.show()
 if model_settings['load_trained_model'] is False:
     animate_train(history_train['x_mu_list'], labels_train, 'train_animation', save_path=paths.path_result[0],
                   inverse_length_scale=alpha_cls)
-

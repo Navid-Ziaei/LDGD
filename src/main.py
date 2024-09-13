@@ -37,12 +37,12 @@ model_settings = {
     'latent_dim': 2,
     'num_inducing_points_reg': 5,
     'num_inducing_points_cls': 5,
-    'num_epochs_train': 700,
-    'num_epochs_test': 700,
+    'num_epochs_train': 1500,
+    'num_epochs_test': 1500,
     'batch_size': 100,
     'load_trained_model': False,
     'load_tested_model': False,
-    'use_gpytorch': False,
+    'use_gpytorch': True,
     'n_features': 20,
     'dataset': settings.dataset,
     'shared_inducing_points': True,
@@ -64,7 +64,6 @@ plt.show()"""
 # yn_train, ys_train, labels_train = yn_train[:train_size], ys_train[:train_size], labels_train[:train_size]
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
 
 model_settings['data_dim'] = yn_train.shape[-1]
 batch_shape = torch.Size([model_settings['data_dim']])
@@ -103,10 +102,10 @@ model = LDGD(yn_train,
              device=device)
 
 if model_settings['load_trained_model'] is False:
-    losses, history_train = model.train_model(yn=yn_train, ys=ys_train,
-                                              epochs=model_settings['num_epochs_train'],
-                                              batch_size=model_settings['batch_size'],
-                                              show_plot=True, early_stop=1e-6)
+    losses, combined_dict, history_train = model.train_model(yn=yn_train, ys=ys_train,
+                                                             epochs=model_settings['num_epochs_train'],
+                                                             batch_size=model_settings['batch_size'],
+                                                             show_plot=True, early_stop=1e-6)
     model.save_wights(path_save=paths.path_model[0])
 
     with open(paths.path_model[0] + 'model_settings.json', 'w') as f:
@@ -165,10 +164,12 @@ else:
     std_test = torch.nn.functional.softplus(model.x_test.q_log_sigma).cpu().detach().numpy()
 
 plot_heatmap(X, labels_train, model, alpha_cls, cmap='binary', range_scale=1.2,
-             file_name='latent_heatmap_train', inducing_points=inducing_points, save_path=paths.path_result[0], device=device,
+             file_name='latent_heatmap_train', inducing_points=inducing_points, save_path=paths.path_result[0],
+             device=device,
              heat_map_mode='std', show_legend=False)
 plot_heatmap(x_test, labels_test, model, alpha_cls, cmap='binary', range_scale=1.2,
-             file_name='latent_heatmap_test', inducing_points=inducing_points, save_path=paths.path_result[0], device=device,
+             file_name='latent_heatmap_test', inducing_points=inducing_points, save_path=paths.path_result[0],
+             device=device,
              heat_map_mode='std', show_legend=False)
 
 plot_results_gplvm(X, np.sqrt(std), labels=labels_train, losses=losses, inverse_length_scale=alpha_reg,

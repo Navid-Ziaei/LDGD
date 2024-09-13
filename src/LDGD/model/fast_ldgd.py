@@ -135,11 +135,14 @@ class FastLDGD(AbstractLDGD):
                 loss_dict['mse_loss'] = mse_loss
                 if yn_test is not None:
                     predicted_ys_test, *_ = self.predict_class(yn_test, ys_test)
-                    accuracy_test = np.mean(predicted_ys_test == ys_test)
+                    accuracy_test = np.mean(np.squeeze(np.array(predicted_ys_test)) == np.squeeze(np.array(ys_test)))
                     predicted_ys_train, *_ = self.predict_class(yn, ys)
-                    accuracy_train = np.mean(np.array(predicted_ys_train) == np.array(np.argmax(ys, axis=-1)))
+                    accuracy_train = np.mean(
+                        np.squeeze(np.array(predicted_ys_train)) == np.squeeze(np.array(np.argmax(ys, axis=-1))))
+                    mse_loss_test = self.update_history_test(yn_test=yn_test, elbo_loss=loss.item())
                     print(
-                        f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}, MSE: {mse_loss}, Train Accuracy: {accuracy_train} Test Accuracy: {accuracy_test}")
+                        f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}, MSE: {mse_loss}, "
+                        f"Train Accuracy: {accuracy_train} Test Accuracy: {accuracy_test}")
                     loss_dict['accuracy_train'] = accuracy_train
                     loss_dict['accuracy_test'] = accuracy_test
                     loss_dict['mse_loss'] = mse_loss
@@ -173,7 +176,6 @@ class FastLDGD(AbstractLDGD):
         if yn_test.shape[1] != self.d:
             raise ValueError(f"yn_test should be of size [num_test, {self.d}]")
 
-        self.history_test = None
         self.n_test = yn_test.shape[0]
 
         x_test_mu, x_test_logvar = self.x.encode(yn_test.to(self.device))
@@ -182,21 +184,17 @@ class FastLDGD(AbstractLDGD):
         return predictions, self.history_test, loss_terms
 
     def update_history_train(self, yn, elbo_loss):
+        x_mu, x_sigma = self.x.encode(yn.to(self.device))
+        x_mu = x_mu.cpu().detach().numpy()
+        x_sigma = x_sigma.cpu().detach().numpy()
+
         if self.use_gpytorch is False:
-            x_mu, x_sigma = self.x.encode(yn.to(self.device))
-            x_mu = x_mu.cpu().detach().numpy()
-            x_sigma = x_sigma.cpu().detach().numpy()
-            # x_mu = self.x.q_mu.cpu().detach().numpy()
-            # x_sigma = torch.nn.functional.softplus(self.x.q_log_sigma.cpu()).detach().numpy()
             self.history_train['elbo_loss'].append(elbo_loss)
             self.history_train['x_mu_list'].append(x_mu.copy())
             self.history_train['x_sigma_list'].append(x_sigma.copy())
             self.history_train['z_list_cls'].append(self.inducing_inputs_cls.cpu().detach().numpy().copy())
             self.history_train['z_list_reg'].append(self.inducing_inputs_reg.cpu().detach().numpy().copy())
         else:
-            x_mu, x_sigma = self.x.encode(yn.to(self.device))
-            x_mu = x_mu.cpu().detach().numpy()
-            x_sigma = x_sigma.cpu().detach().numpy()
             self.history_train['x_mu_list'].append(x_mu.copy())
             self.history_train['x_sigma_list'].append(x_sigma.copy())
             self.history_train['z_list_cls'].append(self.q_f_cls.inducing_points.cpu().detach().numpy().copy())
@@ -208,17 +206,17 @@ class FastLDGD(AbstractLDGD):
         return mse_loss
 
     def update_history_test(self, yn_test, elbo_loss):
+        x_mu, x_sigma = self.x.encode(yn_test.to(self.device))
+        x_mu = x_mu.cpu().detach().numpy()
+        x_sigma = x_sigma.cpu().detach().numpy()
+
         if self.use_gpytorch is False:
-            x_mu = self.x_test.q_mu.cpu().detach().numpy()
-            x_sigma = self.x_test.q_sigma.cpu().detach().numpy()
             self.history_test['elbo_loss'].append(elbo_loss)
             self.history_test['x_mu_list'].append(x_mu.copy())
             self.history_test['x_sigma_list'].append(x_sigma.copy())
             self.history_test['z_list_cls'].append(self.inducing_inputs_cls.cpu().detach().numpy().copy())
             self.history_test['z_list_reg'].append(self.inducing_inputs_reg.cpu().detach().numpy().copy())
         else:
-            x_mu = self.x_test.q_mu.cpu().detach().numpy()
-            x_sigma = self.x_test.q_log_sigma.cpu().detach().numpy()
             self.history_test['x_mu_list'].append(x_mu.copy())
             self.history_test['x_sigma_list'].append(x_sigma.copy())
             self.history_test['z_list_cls'].append(self.q_f_cls.inducing_points.cpu().detach().numpy().copy())

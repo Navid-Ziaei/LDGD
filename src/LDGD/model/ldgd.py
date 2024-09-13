@@ -241,7 +241,7 @@ class LDGD(AbstractLDGD):
                     mse_loss = self.update_history_test(yn_test, elbo_loss=loss.item(), monitor_mse=monitor_mse)
                     loss_dict['mse_loss'] = mse_loss
                     predicted_ys_test, *_ = self.classify_x(self.x_test.q_mu)
-                    accuracy_test = np.mean(predicted_ys_test == ys_test)
+                    accuracy_test = np.mean(np.array(predicted_ys_test) == np.array(ys_test))
                     loss_dict['accuracy'] = accuracy_test
                     if verbos == 1:
                         if monitor_mse is True:

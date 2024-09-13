@@ -1,1 +1,1 @@
-from gp_project_pytorch.model import *
+from .LDGD.model import *

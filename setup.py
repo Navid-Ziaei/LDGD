@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='LDGD',
-    version='0.1',
+    version='0.2',
     description='A Python package for Gaussian Process models implemented in PyTorch',
     long_description=open('README.md').read(),
     long_description_content_type='text/markdown',
