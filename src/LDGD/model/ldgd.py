@@ -1,7 +1,7 @@
 from ..model.utils.variational import VariationalLatentVariable, CholeskeyVariationalDist
 from ..model.utils.variational import SharedVariationalStrategy
 from ..visualization import plot_loss
-from ..utils import dicts_to_dict_of_lists
+from ..utils import dicts_to_dict_of_lists, check_one_hot_and_get_accuracy
 
 import torch
 import gpytorch
@@ -144,7 +144,7 @@ class LDGD(AbstractLDGD):
                     loss_dict['mse_loss'] = mse_loss
 
                     predicted_ys_train, *_ = self.classify_x(self.x.q_mu)
-                    accuracy_train = np.mean(predicted_ys_train == np.argmax(ys.detach().cpu().numpy(), axis=-1))
+                    accuracy_train = check_one_hot_and_get_accuracy(ys, predicted_ys_train)
                     loss_dict['accuracy'] = accuracy_train
 
                     if save_best_result is True:
@@ -241,7 +241,7 @@ class LDGD(AbstractLDGD):
                     mse_loss = self.update_history_test(yn_test, elbo_loss=loss.item(), monitor_mse=monitor_mse)
                     loss_dict['mse_loss'] = mse_loss
                     predicted_ys_test, *_ = self.classify_x(self.x_test.q_mu)
-                    accuracy_test = np.mean(np.array(predicted_ys_test) == np.array(ys_test))
+                    accuracy_test = check_one_hot_and_get_accuracy(ys_test, predicted_ys_test)
                     loss_dict['accuracy'] = accuracy_test
                     if verbos == 1:
                         if monitor_mse is True:

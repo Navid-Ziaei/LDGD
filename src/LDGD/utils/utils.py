@@ -1,6 +1,39 @@
 import os
 import pandas as pd
 
+import numpy as np
+import torch
+from sklearn.metrics import accuracy_score
+
+
+# Check if tensor is on GPU, move to CPU, detach, and convert to numpy
+def tensor_to_numpy(tensor):
+    if isinstance(tensor, torch.Tensor):
+        if tensor.is_cuda:
+            tensor = tensor.cpu().detach()
+        else:
+            tensor = tensor.detach()
+        tensor = tensor.numpy()
+    return tensor
+
+
+# Check if one-hot encoded and use argmax if necessary
+def check_one_hot_and_get_accuracy(y_true, y_predicted):
+    # Convert to numpy arrays if they are torch tensors on GPU
+    y_true = tensor_to_numpy(y_true)
+    y_predicted = tensor_to_numpy(y_predicted)
+
+    # Check if ys_test is one-hot encoded
+    if y_true.ndim > 1 and y_true.shape[1] > 1:
+        y_true = np.argmax(y_true, axis=1)
+
+    # Check if predicted_ys_test is one-hot encoded
+    if y_predicted.ndim > 1 and y_predicted.shape[1] > 1:
+        y_predicted = np.argmax(y_predicted, axis=1)
+
+    # Calculate accuracy
+    accuracy = accuracy_score(y_true, y_predicted)
+    return accuracy
 
 def dicts_to_dict_of_lists(dicts):
     result = {key: [] for key in dicts[0]}  # Initialize with keys from the first dict

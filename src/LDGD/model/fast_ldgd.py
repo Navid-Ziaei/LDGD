@@ -2,7 +2,7 @@ from ..model.utils.variational import VariationalDist, VariationalLatentVariable
     CholeskeyVariationalDist, SharedVariationalStrategy, VariationalLatentVariableNN
 from ..visualization import plot_loss
 from ..model.utils.variational_strategy import VariationalStrategy2
-from ..utils import dicts_to_dict_of_lists
+from ..utils import dicts_to_dict_of_lists, check_one_hot_and_get_accuracy
 import torch
 import gpytorch
 import numpy as np
@@ -135,10 +135,9 @@ class FastLDGD(AbstractLDGD):
                 loss_dict['mse_loss'] = mse_loss
                 if yn_test is not None:
                     predicted_ys_test, *_ = self.predict_class(yn_test, ys_test)
-                    accuracy_test = np.mean(np.squeeze(np.array(predicted_ys_test)) == np.squeeze(np.array(ys_test)))
+                    accuracy_test = check_one_hot_and_get_accuracy(y_true=ys_test, y_predicted=predicted_ys_test)
                     predicted_ys_train, *_ = self.predict_class(yn, ys)
-                    accuracy_train = np.mean(
-                        np.squeeze(np.array(predicted_ys_train)) == np.squeeze(np.array(np.argmax(ys, axis=-1))))
+                    accuracy_train = check_one_hot_and_get_accuracy(y_true=ys, y_predicted=predicted_ys_train)
                     mse_loss_test = self.update_history_test(yn_test=yn_test, elbo_loss=loss.item())
                     print(
                         f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}, MSE: {mse_loss}, "

@@ -140,9 +140,10 @@ class AbstractLDGD(nn.Module, ABC):
     def predict_class(self, yn_test, ys_test, learning_rate=0.01, epochs=100, batch_size=100, early_stop=None):
         pass
 
-    def evaluate(self, yn_test, ys_test, learning_rate=0.01, epochs=100, save_path=None, early_stop=None, verbos=1, target_names=None):
+    def evaluate(self, yn_test, ys_test, learning_rate=0.01, epochs=100, save_path=None, early_stop=None, verbos=1,
+                 target_names=None, monitor_mse=False):
         predictions, history_test, loss_terms = self.predict_class(yn_test, ys_test, learning_rate=learning_rate, epochs=epochs,
-                                                       early_stop=early_stop, verbos=verbos)
+                                                       early_stop=early_stop, verbos=verbos, monitor_mse=monitor_mse)
 
 
         report = classification_report(y_true=ys_test, y_pred=predictions, target_names=target_names)
@@ -181,18 +182,18 @@ class AbstractLDGD(nn.Module, ABC):
         else:
             kl_x = x._added_loss_terms['x_kl'].loss()
 
-        loss_reg = ell_reg - kl_u_reg/ kl_u_reg.shape[0]
+        loss_reg = ell_reg - kl_u_reg #/ kl_u_reg.shape[0]
         if ys is not None:
-            loss_cls = ell_cls - kl_u_cls/ kl_u_cls.shape[0]
-            elbo = loss_reg.sum() * self.reg_weight + loss_cls.sum() * self.cls_weight - kl_x
-            loss_dict = {'loss_reg': -loss_reg.sum().item(),
-                         'loss_cls': -loss_cls.sum().item(),
+            loss_cls = ell_cls - kl_u_cls #/ kl_u_cls.shape[0]
+            elbo = loss_reg.mean() * self.reg_weight + loss_cls.mean() * self.cls_weight - kl_x
+            loss_dict = {'loss_reg': -ell_reg.mean().item(),
+                         'loss_cls': -ell_cls.mean().item(),
                          'loss_kl': kl_x.item(),
-                         'loss_kl_u_reg': kl_u_reg.sum().item()/ kl_u_reg.shape[0],
-                         'loss_kl_u_cls': kl_u_cls.sum().item()/ kl_u_cls.shape[0]}
+                         'loss_kl_u_reg': kl_u_reg.mean().item(),
+                         'loss_kl_u_cls': kl_u_cls.mean().item()}
         else:
-            elbo = loss_reg.sum() * self.reg_weight - kl_x
-            loss_dict = {'loss_reg': -loss_reg.sum().item(), 'loss_kl': kl_x.item()}
+            elbo = loss_reg.mean() * self.reg_weight - kl_x
+            loss_dict = {'loss_reg': -ell_reg.mean().item(), 'loss_kl_u_reg': kl_u_reg.mean().item(), 'loss_kl': kl_x.item()}
         return -elbo, loss_dict
 
     def ell_cls_scratch(self, x_samples, ys):
