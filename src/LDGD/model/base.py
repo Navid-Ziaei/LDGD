@@ -137,13 +137,13 @@ class AbstractLDGD(nn.Module, ABC):
         pass
 
     @abstractmethod
-    def predict_class(self, yn_test, ys_test, learning_rate=0.01, epochs=100, batch_size=100, early_stop=None):
+    def predict_class(self, yn_test, ys_test, learning_rate=0.01, epochs=100, batch_size=100, early_stop=None, monitor_mse=False):
         pass
 
     def evaluate(self, yn_test, ys_test, learning_rate=0.01, epochs=100, save_path=None, early_stop=None, verbos=1,
                  target_names=None, monitor_mse=False):
         predictions, history_test, loss_terms = self.predict_class(yn_test, ys_test, learning_rate=learning_rate, epochs=epochs,
-                                                       early_stop=early_stop, verbos=verbos, monitor_mse=monitor_mse)
+                                                       early_stop=early_stop, verbos=verbos, monitor_mse=monitor_mse, save_path=save_path)
 
 
         report = classification_report(y_true=ys_test, y_pred=predictions, target_names=target_names)

@@ -171,7 +171,7 @@ class FastLDGD(AbstractLDGD):
         return losses, combined_dict, self.history_train
 
     def predict_class(self, yn_test, ys_test, learning_rate=0.01, epochs=100, batch_size=100, early_stop=None,
-                      verbos=None):
+                      verbos=None, monitor_mse=False, **kwargs):
         if yn_test.shape[1] != self.d:
             raise ValueError(f"yn_test should be of size [num_test, {self.d}]")
 

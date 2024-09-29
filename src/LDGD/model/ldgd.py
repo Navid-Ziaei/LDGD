@@ -181,7 +181,7 @@ class LDGD(AbstractLDGD):
         return losses, combined_dict, self.history_train
 
     def predict_class(self, yn_test, ys_test, learning_rate=0.01, epochs=100, batch_size=100, early_stop=None, monitor_mse=False,
-                      verbos=1):
+                      verbos=1, save_best_result=True, **kwargs):
         if yn_test.shape[1] != self.d:
             raise ValueError(f"yn_test should be of size [num_test, {self.d}]")
 
@@ -222,6 +222,8 @@ class LDGD(AbstractLDGD):
 
 
         losses, loss_terms, x_mu_list, x_sigma_list, z_list_reg, z_list_cls = [], [], [], [], [], []
+        best_acc = 0.0
+        best_loss = np.inf
         for epoch in range(epochs):
             batch_index = self._get_batch_idx(batch_size, self.n_test)
             optimizer.zero_grad()
@@ -243,6 +245,14 @@ class LDGD(AbstractLDGD):
                     predicted_ys_test, *_ = self.classify_x(self.x_test.q_mu)
                     accuracy_test = check_one_hot_and_get_accuracy(ys_test, predicted_ys_test)
                     loss_dict['accuracy'] = accuracy_test
+
+                    if save_best_result is True:
+                        if accuracy_test > best_acc or (accuracy_test == best_acc and loss.item()<=best_loss):
+                            best_acc = accuracy_test
+                            best_loss = loss.item()
+                            self.save_wights(path_save=kwargs.get('save_path'))
+                            print("model saved!")
+
                     if verbos == 1:
                         if monitor_mse is True:
                             print(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item()}, MSE: {mse_loss}, Accuracy: {accuracy_test}")
@@ -265,7 +275,8 @@ class LDGD(AbstractLDGD):
                     print(
                         f"Attempt {self.attempts}: Error occurred, increasing jitter. New jitter: {self.jitter}")
 
-
+        if save_best_result is True:
+            self.load_weights(kwargs.get('save_path'))
         predictions, *_ = self.classify_x(self.x_test.q_mu)
         combined_dict = dicts_to_dict_of_lists(loss_terms)
         return predictions, self.history_test, combined_dict
